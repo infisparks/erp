@@ -38,6 +38,8 @@ export default function Sidebar({ user }: SidebarProps) {
     { icon: Users, label: "Teachers Payment", href: "/teachers/payment", show: true },
     { icon: BarChart3, label: "Students List", href: "/student", show: true },
     { icon: BarChart3, label: "Cources Fees", href: "/fees", show: true },
+    { icon: BarChart3, label: "Student Promotion", href: "/student/promotion", show: true },
+    { icon: BarChart3, label: "Student Status", href: "/student/status", show: true },
     { icon: BarChart3, label: "Student Attendance", href: "/attandance", show: true },
   ]
 
@@ -71,7 +73,7 @@ export default function Sidebar({ user }: SidebarProps) {
             </div>
             {isOpen && (
               <div>
-                <h1 className="text-lg font-bold text-white">EduSoft</h1>
+                <h1 className="text-lg font-bold text-white">InfiEdu</h1>
                 <p className="text-xs text-blue-300">College Management</p>
               </div>
             )}

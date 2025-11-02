@@ -63,6 +63,7 @@ export default function AttendancePage() {
   // --- Filter Selections ---
   const [selectedStream, setSelectedStream] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedSemester, setSelectedSemester] = useState<string | null>(null); // <-- ADDED
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   
   // --- Grid State ---
@@ -82,13 +83,12 @@ export default function AttendancePage() {
 
   // --- Filter Options (derived from data) ---
   const courseOptions = useMemo(() => allCourses.filter(c => c.stream_id === selectedStream), [allCourses, selectedStream]);
-  const subjectOptions = useMemo(() => {
-    if (!selectedCourse) return [];
-    const courseSemesterIds = allSemesters
-      .filter(s => s.course_id === selectedCourse)
-      .map(s => s.id);
-    return allSubjects.filter(s => courseSemesterIds.includes(s.semester_id));
-  }, [allSemesters, allSubjects, selectedCourse]);
+  
+  // 🔧 UPDATED: Now filters semesters based on selected course
+  const semesterOptions = useMemo(() => allSemesters.filter(s => s.course_id === selectedCourse), [allSemesters, selectedCourse]);
+  
+  // 🔧 UPDATED: Now filters subjects based on selected semester
+  const subjectOptions = useMemo(() => allSubjects.filter(s => s.semester_id === selectedSemester), [allSubjects, selectedSemester]);
 
   // --- Data Fetching: Initial Config ---
   useEffect(() => {
@@ -118,17 +118,18 @@ export default function AttendancePage() {
   // --- Data Fetching: Students ---
   useEffect(() => {
     const fetchStudents = async () => {
-      if (!selectedCourse) {
+      // 🔧 UPDATED: Now requires both course and semester to be selected
+      if (!selectedCourse || !selectedSemester) {
         setStudents([]);
         return;
       }
       setLoading(prev => ({ ...prev, students: true }));
       try {
-        // This query correctly fetches students based on the selected course ID
         const { data, error } = await supabase
           .from("students")
           .select('id, fullname, "rollNumber"')
           .eq("course_id", selectedCourse)
+          .eq("semester_id", selectedSemester) // <-- ADDED semester filter
           .order("fullname");
         
         if (error) throw error;
@@ -139,7 +140,7 @@ export default function AttendancePage() {
       setLoading(prev => ({ ...prev, students: false }));
     };
     fetchStudents();
-  }, [selectedCourse, supabase]); // This runs every time 'selectedCourse' changes
+  }, [selectedCourse, selectedSemester, supabase]); // <-- ADDED semester dependency
 
   // --- Data Fetching: Attendance ---
   useEffect(() => {
@@ -251,11 +252,17 @@ export default function AttendancePage() {
 
       <Card className="shadow-lg">
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 🔧 UPDATED: Grid changed to 4 columns */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Dropdown
               value={selectedStream}
               options={allStreams}
-              onChange={(e) => { setSelectedStream(e.value); setSelectedCourse(null); setSelectedSubject(null); }}
+              onChange={(e) => { 
+                setSelectedStream(e.value); 
+                setSelectedCourse(null); 
+                setSelectedSemester(null); 
+                setSelectedSubject(null); 
+              }}
               optionLabel="name"
               optionValue="id"
               placeholder="1. Select Stream"
@@ -265,7 +272,11 @@ export default function AttendancePage() {
             <Dropdown
               value={selectedCourse}
               options={courseOptions}
-              onChange={(e) => { setSelectedCourse(e.value); setSelectedSubject(null); }}
+              onChange={(e) => { 
+                setSelectedCourse(e.value); 
+                setSelectedSemester(null); 
+                setSelectedSubject(null); 
+              }}
               optionLabel="name"
               optionValue="id"
               placeholder="2. Select Course"
@@ -273,16 +284,31 @@ export default function AttendancePage() {
               filter
               disabled={!selectedStream}
             />
+            {/* 🔧 NEW: Semester Dropdown */}
+            <Dropdown
+              value={selectedSemester}
+              options={semesterOptions}
+              onChange={(e) => { 
+                setSelectedSemester(e.value); 
+                setSelectedSubject(null); 
+              }}
+              optionLabel="name"
+              optionValue="id"
+              placeholder="3. Select Semester"
+              className="w-full"
+              filter
+              disabled={!selectedCourse}
+            />
             <Dropdown
               value={selectedSubject}
               options={subjectOptions}
               onChange={(e) => setSelectedSubject(e.value)}
               optionLabel="name"
               optionValue="id"
-              placeholder="3. Select Subject"
+              placeholder="4. Select Subject"
               className="w-full"
               filter
-              disabled={!selectedCourse}
+              disabled={!selectedSemester} // <-- Depends on semester
             />
           </div>
           {error && (
@@ -300,7 +326,7 @@ export default function AttendancePage() {
       ) : !selectedSubject ? (
         <Card className="shadow-lg">
           <CardContent className="p-10 text-center text-gray-500">
-            Please select a stream, course, and subject to load the attendance sheet.
+            Please select a stream, course, semester, and subject to load the attendance sheet.
           </CardContent>
         </Card>
       ) : (
@@ -380,6 +406,12 @@ export default function AttendancePage() {
                 </tbody>
               </table>
             </div>
+            {/* 🔧 UPDATED: Show message if no students found */}
+            {!loading.attendance && students.length === 0 && (
+              <p className="text-center p-6 text-gray-500">
+                No students found for this course and semester.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
