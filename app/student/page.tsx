@@ -1,17 +1,82 @@
-// app/dashboard/students/page.tsx
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { getSupabaseClient } from "@/lib/supabase/client"
+import { SupabaseClient } from "@supabase/supabase-js"
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  useReactTable,
+  ColumnFiltersState,
+  SortingState,
+  getSortedRowModel,
+} from "@tanstack/react-table"
+import { format, parseISO } from "date-fns" // For date formatting
 
-// --- UI Components ---
-import { Card, CardContent } from "@/components/ui/card"
+// --- ShadCN UI Components ---
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils" // Assumes you have this from shadcn install
 
 // --- Icons ---
 import {
@@ -28,22 +93,21 @@ import {
   Trash2,
   Download,
   Upload,
+  Filter,
+  XCircle,
+  MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  Check,
+  CalendarIcon,
+  ArrowUpDown,
+  Image as ImageIcon, // Added for new component
 } from "lucide-react"
-
-// --- PrimeReact Components ---
-import { DataTable } from "primereact/datatable"
-import { Column } from "primereact/column"
-import { Dialog } from "primereact/dialog"
-import { Dropdown } from 'primereact/dropdown';
-import { AutoComplete, AutoCompleteCompleteEvent } from 'primereact/autocomplete';
-
-// --- PrimeReact CSS ---
-import "primereact/resources/themes/saga-blue/theme.css"
-import "primereact/resources/primereact.min.css"
-import "primeicons/primeicons.css"
 
 // --- Type Definitions ---
 
+// For the main list
 interface StudentList {
   id: string
   fullname: string | null
@@ -52,6 +116,69 @@ interface StudentList {
   "rollNumber": string
   status: string
   created_at: string
+  photo_path: string | null
+}
+
+// For the modal details & edit form
+interface StudentDetail {
+  id: string
+  user_id: string
+  created_at: string
+  firstname: string
+  lastname: string
+  email: string
+  phone: string
+  dateofbirth: string
+  address: string
+  city: string
+  state: string
+  zipcode: string
+  documents: StudentDocument[] | null
+  custom_data: Record<string, string> | null
+  status: string
+  "rollNumber": string
+  secondary_phone: string | null
+  family_phone: string | null
+  middlename: string | null
+  fullname: string | null
+  admission_year: string | null
+  course_id: string | null
+  admission_category: string | null
+  admission_fees: number | null
+  semester_id: string | null
+  admission_type: string | null
+  promotion_status: string
+  father_name: string | null
+  mother_name: string | null
+  father_occupation: string | null
+  mother_occupation: string | null
+  father_annual_income: string | null
+  mother_annual_income: string | null
+  gender: string | null
+  nationality: string | null
+  place_of_birth: string | null
+  domicile_of_maharashtra: string | null
+  phd_handicap: string | null
+  religion: string | null
+  caste: string | null
+  blood_group: string | null
+  category_type: string | null
+  aadhar_card_number: string | null
+  pan_no: string | null
+  student_mobile_no: string | null
+  father_mobile_no: string | null
+  mother_mobile_no: string | null
+  photo_path: string | null
+  quota_selection: string | null
+  discipline: string | null
+  branch_preferences: string | null
+  how_did_you_know: string | null
+  form_no: string | null
+  registration_no: string | null
+  merit_no: string | null
+  // Fields omitted for brevity in edit form (system managed):
+  // branch_history, correspondence_details, permanent_details, academic_records
+  [key: string]: any // To allow for dynamic properties
 }
 
 interface StudentDocument {
@@ -61,77 +188,137 @@ interface StudentDocument {
   fileType: string;
 }
 
-interface StudentDetail {
-  id: string
-  user_id: string
-  created_at: string
-  firstname: string
-  middlename: string | null
-  lastname: string
-  fullname: string | null
-  email: string
-  phone: string
-  secondary_phone: string | null
-  family_phone: string | null
-  dateofbirth: string
-  address: string
-  city: string
-  state: string
-  zipcode: string
-  "rollNumber": string
-  status: string
-  custom_data: Record<string, string> | null
-  documents: StudentDocument[] | null
-}
-
 interface FileToAdd {
   id: string;
   name: string;
   file: File;
 }
 
-interface FieldOption {
-    label: string;
-    type: string;
-}
-interface DocOption {
-    name: string;
-    description: string;
+// For form config options
+interface FieldOption { label: string; type: string; }
+interface DocOption { name: string; description: string; }
+
+// For filters
+interface Stream { id: string; name: string; }
+interface Course { id: string; name: string; stream_id: string; }
+interface Semester { id: string; name: string; course_id: string; }
+
+// For Combobox props
+interface SearchableSelectProps {
+  options: { label: string; value: string; }[];
+  value: string | null;
+  onChange: (value: string | null) => void;
+  placeholder: string;
+  disabled?: boolean;
 }
 
+// --- Constants ---
 const statusOptions = [
   { label: 'Pending', value: 'pending' },
   { label: 'Approved', value: 'approved' },
   { label: 'Rejected', value: 'rejected' },
 ];
 
+const promotionStatusOptions = [
+  { label: 'Eligible', value: 'Eligible' },
+  { label: 'Not Eligible', value: 'Not Eligible' },
+  { label: 'Year Drop', value: 'Year Drop' },
+];
+
+const genderOptions = [
+  { label: 'Male', value: 'Male' },
+  { label: 'Female', value: 'Female' },
+  { label: 'Other', value: 'Other' },
+];
+
+const yesNoOptions = [
+  { label: 'Yes', value: 'Y' },
+  { label: 'No', value: 'N' },
+];
+
 // -------------------------------------------------------------------
-// 🔧 FIX: HELPER COMPONENTS MOVED OUTSIDE 🔧
-// 
-// By defining these components here (outside StudentListPage),
-// they won't be re-created on every state change, which fixes
-// the input focus-losing bug.
+// 🚀 Reusable Helper Components 🚀
 // -------------------------------------------------------------------
 
 /**
- * Helper component for read-only detail items in view mode
+ * Professional Searchable Select (Combobox)
+ */
+const SearchableSelect: React.FC<SearchableSelectProps> = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+}) => {
+  const [open, setOpen] = useState(false)
+  const selectedLabel = options.find((option) => option.value === value)?.label
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+          disabled={disabled}
+        >
+          {value ? (
+            <span className="truncate">{selectedLabel}</span>
+          ) : (
+            <span className="text-muted-foreground">{placeholder}</span>
+          )}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+        <Command>
+          <CommandInput placeholder="Search..." />
+          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandList>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.value}
+                  value={option.label}
+                  onSelect={() => {
+                    onChange(option.value)
+                    setOpen(false)
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-4 w-4 ${
+                      value === option.value ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                  {option.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * Helper for View-Mode Details
  */
 const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({
   label,
   value,
 }) => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-1">
-    <p className="md:col-span-1 text-sm font-semibold text-gray-600">{label}</p>
-    <div className="md:col-span-2 text-sm text-gray-900 break-words">{value || "N/A"}</div>
+  <div>
+    <p className="text-sm font-medium text-muted-foreground">{label}</p>
+    <p className="text-base break-words">{value || "N/A"}</p>
   </div>
 )
 
 /**
- * Helper component for rendering a downloadable document link
+ * Helper for Downloadable Document Link
  */
-const DocumentLinkItem: React.FC<{ doc: StudentDocument }> = ({ doc }) => {
-  // This is safe to call here as getSupabaseClient() is not a hook
-  const supabase = getSupabaseClient()
+const DocumentLinkItem: React.FC<{ doc: StudentDocument, supabase: SupabaseClient }> = ({ doc, supabase }) => {
   const { data: { publicUrl } } = supabase
     .storage
     .from('student_documents')
@@ -142,72 +329,248 @@ const DocumentLinkItem: React.FC<{ doc: StudentDocument }> = ({ doc }) => {
       href={publicUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center justify-between p-2 bg-white rounded-md border border-gray-200 hover:bg-gray-50 group"
+      className="flex items-center justify-between p-3 bg-secondary rounded-md border hover:bg-muted group"
     >
-      <div className="flex items-center gap-2">
-        <File className="w-4 h-4 text-blue-600" />
+      <div className="flex items-center gap-3">
+        <File className="w-5 h-5 text-blue-500" />
         <div>
-          <p className="text-sm font-medium text-blue-700 group-hover:underline">{doc.name}</p>
-          <p className="text-xs text-gray-500">{doc.fileName}</p>
+          <p className="text-sm font-medium group-hover:underline">{doc.name}</p>
+          <p className="text-xs text-muted-foreground">{doc.fileName}</p>
         </div>
       </div>
-      <Download className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
+      <Download className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
     </a>
   )
 }
 
 /**
- * Helper component for a consistent form input group
+ * 🌟 NEW: Document Image Viewer Component 🌟
  */
-const FormInputGroup: React.FC<{
-  label: string,
-  name: string,
-  value: string,
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
-  type?: string,
-  required?: boolean,
-  placeholder?: string
-  className?: string
-}> = ({ label, name, value, onChange, type = "text", required = false, placeholder = "", className = "" }) => (
-  <div className={`space-y-1 ${className}`}>
-    <Label htmlFor={name} className="font-semibold">{label}{required && '*'}</Label>
-    <Input
-      id={name}
-      name={name}
-      type={type}
+const DocumentViewer: React.FC<{ documents: StudentDocument[], supabase: SupabaseClient }> = ({ documents, supabase }) => {
+  const [isViewerOpen, setIsViewerOpen] = useState(false)
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  // Filter for images and generate public URLs
+  const imageDocs = useMemo(() => {
+    return documents
+      .filter(doc => doc.fileType && doc.fileType.startsWith("image/"))
+      .map(doc => ({
+        ...doc,
+        publicUrl: supabase.storage.from('student_documents').getPublicUrl(doc.path).data.publicUrl
+      }))
+  }, [documents, supabase])
+
+  if (imageDocs.length === 0) {
+    return null // Don't render anything if no images
+  }
+
+  const currentImage = imageDocs[currentIndex]
+
+  const handleNext = () => {
+    setCurrentIndex(prev => (prev + 1) % imageDocs.length)
+  }
+
+  const handlePrev = () => {
+    setCurrentIndex(prev => (prev - 1 + imageDocs.length) % imageDocs.length)
+  }
+
+  return (
+    <>
+      <Button variant="outline" onClick={() => setIsViewerOpen(true)} className="mb-4 w-full">
+        <ImageIcon className="mr-2 h-4 w-4" />
+        View All Images ({imageDocs.length})
+      </Button>
+
+      <Dialog open={isViewerOpen} onOpenChange={setIsViewerOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Image Viewer</DialogTitle>
+            <DialogDescription>
+              {currentImage.name} ({currentImage.fileName})
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex justify-center items-center p-4 bg-muted rounded-md min-h-[400px]">
+            {currentImage ? (
+              <img 
+                src={currentImage.publicUrl} 
+                alt={currentImage.name} 
+                className="max-h-[500px] max-w-full object-contain"
+              />
+            ) : (
+              <p>Error loading image.</p>
+            )}
+          </div>
+
+          <DialogFooter className="flex-row justify-between items-center">
+            <Button variant="outline" onClick={handlePrev}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Image {currentIndex + 1} of {imageDocs.length}
+            </span>
+            <Button variant="outline" onClick={handleNext}>
+              Next
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+
+/**
+ * Helper for Form Input Group in Edit Mode
+ */
+const FormInputGroup: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label: string }> = ({ label, name, ...props }) => (
+  <div className="space-y-2">
+    <Label htmlFor={name} className="font-medium">{label}{props.required && '*'}</Label>
+    <Input id={name} name={name} {...props} />
+  </div>
+)
+
+/**
+ * Helper for Form Select Group in Edit Mode
+ */
+const FormSelectGroup: React.FC<{
+  label: string;
+  name: string;
+  value: string | null | undefined;
+  onValueChange: (value: string) => void;
+  options: { label: string; value: string; }[];
+  placeholder: string;
+  required?: boolean;
+}> = ({ label, name, value, onValueChange, options, placeholder, required = false }) => (
+  <div className="space-y-2">
+    <Label htmlFor={name} className="font-medium">{label}{required && '*'}</Label>
+    <Select value={value || ""} onValueChange={onValueChange}>
+      <SelectTrigger id={name}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(option => (
+          <SelectItem key={option.value} value={option.value} className="capitalize">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)
+
+/**
+ * Helper for Form Searchable Select Group in Edit Mode
+ */
+const FormSearchableSelectGroup: React.FC<{
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  options: { label: string; value: string; }[];
+  placeholder: string;
+  disabled?: boolean;
+  required?: boolean;
+}> = ({ label, value, onChange, options, placeholder, disabled = false, required = false }) => (
+  <div className="space-y-2">
+    <Label className="font-medium">{label}{required && '*'}</Label>
+    <SearchableSelect
+      options={options}
       value={value}
       onChange={onChange}
-      required={required}
       placeholder={placeholder}
+      disabled={disabled}
     />
   </div>
 )
 
-// -------------------------------------------------------------------
-// END OF FIX
-// -------------------------------------------------------------------
+/**
+ * Helper for Form Date Picker Group in Edit Mode
+ */
+const FormDatePickerGroup: React.FC<{
+  label: string;
+  date: Date | undefined;
+  setDate: (date: Date | undefined) => void;
+  required?: boolean;
+}> = ({ label, date, setDate, required = false }) => (
+  <div className="space-y-2">
+    <Label className="font-medium">{label}{required && '*'}</Label>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant={"outline"}
+          className={cn(
+            "w-full justify-start text-left font-normal",
+            !date && "text-muted-foreground"
+          )}
+        >
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {date ? format(date, "PPP") : <span>Pick a date</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0">
+        <Calendar
+          mode="single"
+          selected={date}
+          onSelect={setDate}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  </div>
+)
 
 
 /**
- * Main Student List Page
+ * Helper for Rounded Square Avatar
  */
+const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ src, alt }) => {
+  return (
+    <Avatar className="h-10 w-10 rounded-md">
+      <AvatarImage 
+        src={src || undefined} 
+        alt={alt || "Student Photo"} 
+        className="rounded-md object-cover" // Explicitly add object-cover
+      />
+      <AvatarFallback className="rounded-md bg-muted">
+        <UserRound className="h-5 w-5 text-muted-foreground" />
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+
+// -------------------------------------------------------------------
+// 🎓 Main Student List Page Component 🎓
+// -------------------------------------------------------------------
+
 export default function StudentListPage() {
+  const supabase = getSupabaseClient()
+
   // --- Page State ---
   const [students, setStudents] = useState<StudentList[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // --- Table State ---
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState("")
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "fullname", desc: false },
+  ])
 
   // --- Modal State ---
-  const [isModalVisible, setIsModalVisible] = useState(false)
-  const [modalMode, setModalMode] = useState<"view" | "edit">("view")
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [modalLoading, setModalLoading] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   // --- Data State ---
-  const [currentStudent, setCurrentStudent] = useState<StudentDetail | null>(null)
+  const [selectedStudent, setSelectedStudent] = useState<StudentDetail | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<StudentDetail>>({})
+  const [editFormDateOfBirth, setEditFormDateOfBirth] = useState<Date | undefined>()
   
   // --- Document Management State ---
   const [filesToAdd, setFilesToAdd] = useState<FileToAdd[]>([]);
@@ -218,64 +581,125 @@ export default function StudentListPage() {
   const [availableCustomFields, setAvailableCustomFields] = useState<FieldOption[]>([])
   const [availableDocuments, setAvailableDocuments] = useState<DocOption[]>([])
   
-  const [selectedCustomField, setSelectedCustomField] = useState<FieldOption | string>("")
-  const [filteredCustomFieldSuggestions, setFilteredCustomFieldSuggestions] = useState<FieldOption[]>([])
+  const [selectedCustomField, setSelectedCustomField] = useState<FieldOption | null>(null)
+  const [selectedDocument, setSelectedDocument] = useState<DocOption | null>(null)
+
+  // --- Filter States ---
+  const [selectedStream, setSelectedStream] = useState<string | null>(null)
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
+  const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
+
+  const [allStreams, setAllStreams] = useState<Stream[]>([])
+  const [allCourses, setAllCourses] = useState<Course[]>([])
+  const [allSemesters, setAllSemesters] = useState<Semester[]>([])
   
-  const [selectedDocument, setSelectedDocument] = useState<DocOption | string>("")
-  const [filteredDocumentSuggestions, setFilteredDocumentSuggestions] = useState<DocOption[]>([])
+  const [loadingFilters, setLoadingFilters] = useState(true)
+
+  // --- Memoized Filter Options ---
+  const streamOptions = useMemo(() => {
+    return allStreams.map(s => ({ label: s.name, value: s.id }))
+  }, [allStreams])
+
+  const courseOptions = useMemo(() => {
+    if (!selectedStream) return []
+    return allCourses
+      .filter(c => c.stream_id === selectedStream)
+      .map(c => ({ label: c.name, value: c.id }))
+  }, [allCourses, selectedStream])
+  
+  const allCourseOptions = useMemo(() => {
+    return allCourses.map(c => ({ label: c.name, value: c.id }))
+  }, [allCourses])
+
+  const semesterOptions = useMemo(() => {
+    if (!selectedCourse && !editFormData.course_id) return []
+    const courseId = editFormData.course_id || selectedCourse
+    return allSemesters
+      .filter(s => s.course_id === courseId)
+      .map(s => ({ label: s.name, value: s.id }))
+  }, [allSemesters, selectedCourse, editFormData.course_id])
+  
+  const allSemesterOptions = useMemo(() => {
+     return allSemesters.map(s => ({ label: s.name, value: s.id }))
+  }, [allSemesters])
+
 
   // --- Data Fetching (Students) ---
   useEffect(() => {
     fetchStudents()
   }, [])
-
-  // --- Data Fetching (Form Config) ---
+  
+  // --- Data Fetching (Form Config & Filters) ---
   useEffect(() => {
-    const fetchFormConfig = async () => {
+    const fetchAllConfig = async () => {
+      setLoadingFilters(true)
       try {
-        const supabase = getSupabaseClient()
-        
-        // Fetch Custom Field Options
-        const { data: customData, error: customError } = await supabase
-          .from("form_config")
-          .select("data_jsonb")
-          .eq("data_name", "custom_field_options")
-          .single()
-        
-        if (customError) throw customError;
-        if (customData) setAvailableCustomFields(customData.data_jsonb as FieldOption[])
+        const [
+          customData, 
+          docData, 
+          streamData, 
+          courseData, 
+          semesterData
+        ] = await Promise.all([
+          supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
+          supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
+          supabase.from("streams").select("*"),
+          supabase.from("courses").select("*"),
+          supabase.from("semesters").select("*")
+        ])
 
-        // Fetch Document Options
-        const { data: docData, error: docError } = await supabase
-          .from("form_config")
-          .select("data_jsonb")
-          .eq("data_name", "document_options")
-          .single()
-        
-        if (docError) throw docError;
-        if (docData) setAvailableDocuments(docData.data_jsonb as DocOption[])
+        if (customData.data) setAvailableCustomFields(customData.data.data_jsonb as FieldOption[])
+        if (docData.data) setAvailableDocuments(docData.data.data_jsonb as DocOption[])
+        if (streamData.data) setAllStreams(streamData.data as Stream[])
+        if (courseData.data) setAllCourses(courseData.data as Course[])
+        if (semesterData.data) setAllSemesters(semesterData.data as Semester[])
 
-      } catch (error) {
-        console.error("Error fetching form config:", error)
-        setError("Failed to load form configuration options.")
+        const errors = [customData.error, docData.error, streamData.error, courseData.error, semesterData.error].filter(Boolean)
+        if (errors.length > 0) {
+          throw new Error(errors.map(e => e.message).join(", "))
+        }
+
+      } catch (error: any) {
+        console.error("Error fetching form/filter config:", error)
+        setError("Failed to load form and filter configuration options.")
+      } finally {
+        setLoadingFilters(false)
       }
     }
-    fetchFormConfig()
+    fetchAllConfig()
   }, [])
 
 
   const fetchStudents = async () => {
     setLoading(true)
     setError(null)
-    const supabase = getSupabaseClient()
-
+    
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select(
-          `id, fullname, email, phone, "rollNumber", status, created_at`,
+          `id, fullname, email, phone, "rollNumber", status, created_at, photo_path`,
         )
         .order("created_at", { ascending: false })
+
+      // Apply filters
+      if (selectedSemester) {
+        query = query.eq("semester_id", selectedSemester)
+      } else if (selectedCourse) {
+        query = query.eq("course_id", selectedCourse)
+      } else if (selectedStream) {
+        const courseIds = allCourses
+          .filter(c => c.stream_id === selectedStream)
+          .map(c => c.id)
+        
+        if (courseIds.length > 0) {
+          query = query.in("course_id", courseIds)
+        } else {
+          query = query.eq("course_id", "00000000-0000-0000-0000-000000000000")
+        }
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
       if (data) setStudents(data as StudentList[])
@@ -287,21 +711,44 @@ export default function StudentListPage() {
       setLoading(false)
     }
   }
+  
+  // --- Filter Handlers ---
+  const handleStreamChange = (value: string | null) => {
+    setSelectedStream(value)
+    setSelectedCourse(null)
+    setSelectedSemester(null)
+  }
+
+  const handleCourseChange = (value: string | null) => {
+    setSelectedCourse(value)
+    setSelectedSemester(null)
+  }
+
+  const handleSemesterChange = (value: string | null) => {
+    setSelectedSemester(value)
+  }
+
+  const handleFilterSearch = () => {
+    fetchStudents()
+  }
+  
+  const handleFilterClear = () => {
+    setSelectedStream(null)
+    setSelectedCourse(null)
+    setSelectedSemester(null)
+    setGlobalFilter("")
+    setStudents([])
+    setTimeout(() => {
+      fetchStudents()
+    }, 0)
+  }
 
   // --- Modal Logic ---
-  const openModal = async (studentId: string, mode: "view" | "edit") => {
-    setModalMode(mode)
-    setIsModalVisible(true)
+  const openViewModal = async (studentId: string) => {
+    setIsViewModalOpen(true)
     setModalLoading(true)
     setModalError(null)
-    setCurrentStudent(null)
-    setFilesToAdd([])
-    setFilesToRemove([])
-    setNewDocFile(null)
-    setSelectedCustomField("")
-    setSelectedDocument("")
-
-    const supabase = getSupabaseClient()
+    setSelectedStudent(null)
 
     try {
       const { data, error } = await supabase
@@ -311,18 +758,8 @@ export default function StudentListPage() {
         .single()
 
       if (error) throw error
-
-      if (data) {
-        const studentData = data as StudentDetail
-        setCurrentStudent(studentData)
-        if (mode === 'edit') {
-          setEditFormData({
-            ...studentData,
-            documents: studentData.documents || [],
-            custom_data: studentData.custom_data || {}, // Ensure custom_data is an object
-          })
-        }
-      }
+      if (data) setSelectedStudent(data as StudentDetail)
+      
     } catch (err: any) {
       console.error("Error fetching student details:", err)
       setModalError(err.message || "Failed to load student details.")
@@ -331,16 +768,24 @@ export default function StudentListPage() {
     }
   }
 
-  const closeModal = () => {
-    setIsModalVisible(false)
-    setCurrentStudent(null)
-    setEditFormData({})
-    setModalError(null)
+  const openEditModal = (student: StudentDetail) => {
+    setEditFormData(student)
+    // Set date picker state
+    if (student.dateofbirth) {
+      setEditFormDateOfBirth(parseISO(student.dateofbirth))
+    } else {
+      setEditFormDateOfBirth(undefined)
+    }
+    // Reset document management state
     setFilesToAdd([])
     setFilesToRemove([])
     setNewDocFile(null)
-    setSelectedCustomField("")
-    setSelectedDocument("")
+    setSelectedCustomField(null)
+    setSelectedDocument(null)
+    setModalError(null)
+    
+    setIsViewModalOpen(false) // Close view modal
+    setIsEditModalOpen(true) // Open edit modal
   }
 
   // --- Edit Form Handlers ---
@@ -351,8 +796,16 @@ export default function StudentListPage() {
     setEditFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleStatusChange = (e: { value: any }) => {
-     setEditFormData((prev) => ({ ...prev, status: e.value }))
+  const handleEditSelectChange = (name: string, value: string) => {
+     setEditFormData((prev) => ({ ...prev, [name]: value }))
+  }
+  
+  const handleEditSearchableSelectChange = (name: string, value: string | null) => {
+     setEditFormData((prev) => ({ ...prev, [name]: value }))
+     // Reset semester if course changes
+     if (name === "course_id") {
+       setEditFormData((prev) => ({ ...prev, semester_id: null }))
+     }
   }
 
   // --- Custom Field Handlers (Edit Mode) ---
@@ -367,15 +820,15 @@ export default function StudentListPage() {
   }
 
   const handleAddCustomFieldToEdit = () => {
-    if (typeof selectedCustomField === 'object' && selectedCustomField.label) {
+    if (selectedCustomField) {
       const newLabel = selectedCustomField.label;
       if (editFormData.custom_data && newLabel in editFormData.custom_data) {
         setModalError(`Field "${newLabel}" already exists.`);
         return;
       }
       
-      handleCustomFieldChange(newLabel, ""); // Add new field with empty value
-      setSelectedCustomField(""); // Reset autocomplete
+      handleCustomFieldChange(newLabel, "");
+      setSelectedCustomField(null)
       setModalError(null)
     }
   }
@@ -390,7 +843,7 @@ export default function StudentListPage() {
 
   // --- Document Management Handlers (Edit Mode) ---
   const stageFileForUpload = () => {
-    if (typeof selectedDocument === 'object' && selectedDocument.name && newDocFile) {
+    if (selectedDocument && newDocFile) {
       const docName = selectedDocument.name;
       
       const newFileToAdd: FileToAdd = {
@@ -400,7 +853,7 @@ export default function StudentListPage() {
       }
       setFilesToAdd(prev => [...prev, newFileToAdd]);
       
-      setSelectedDocument("")
+      setSelectedDocument(null)
       setNewDocFile(null)
       const fileInput = document.getElementById('newDocFileInput') as HTMLInputElement;
       if (fileInput) fileInput.value = "";
@@ -426,17 +879,15 @@ export default function StudentListPage() {
   // --- Form Submission ---
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!currentStudent) return
+    if (!editFormData.id) return
 
     setIsSubmitting(true)
     setModalError(null)
-    const supabase = getSupabaseClient()
     
-    const { id, user_id, "rollNumber": rollNumber } = currentStudent
+    const { id, user_id, "rollNumber": rollNumber } = editFormData
     const bucketName = 'student_documents'
 
     try {
-      // 1. --- Handle File Deletions from Storage ---
       if (filesToRemove.length > 0) {
         const pathsToRemove = filesToRemove.map(f => f.path)
         const { error: deleteError } = await supabase.storage
@@ -450,7 +901,6 @@ export default function StudentListPage() {
       
       let finalDocumentsArray = [...(editFormData.documents || [])]
 
-      // 2. --- Handle File Uploads to Storage ---
       if (filesToAdd.length > 0) {
         for (const newDoc of filesToAdd) {
           const fileExt = newDoc.file.name.split('.').pop();
@@ -475,7 +925,7 @@ export default function StudentListPage() {
         }
       }
       
-      // 3. --- Prepare Final Data for Database Update ---
+      // Prepare data for update
       const { 
         id: formId, 
         created_at, 
@@ -489,27 +939,30 @@ export default function StudentListPage() {
         ...restOfUpdateData,
         documents: finalDocumentsArray,
         custom_data: editFormData.custom_data,
+        // Format date back to ISO string for Supabase
+        dateofbirth: editFormDateOfBirth ? format(editFormDateOfBirth, "yyyy-MM-dd") : null,
+        // fullname is handled by trigger, no need to send
       }
 
-      // 4. --- Update the Student Record in Database ---
       const { data: updatedStudent, error: updateError } = await supabase
         .from("students")
         .update(finalUpdateData)
-        .eq("id", currentStudent.id)
-        .select(`id, fullname, email, phone, "rollNumber", status, created_at`)
+        .eq("id", editFormData.id)
+        .select(`id, fullname, email, phone, "rollNumber", status, created_at, photo_path`)
         .single()
       
       if (updateError) throw updateError
 
-      // 5. --- Success: Update UI and Close ---
       if (updatedStudent) {
+        // Update the list in-place
         setStudents((prev) =>
           prev.map((s) =>
             s.id === updatedStudent.id ? (updatedStudent as StudentList) : s,
           ),
         )
       }
-      closeModal()
+      setIsEditModalOpen(false) // Close edit modal
+      setEditFormData({}) // Clear form data
 
     } catch (err: any) {
       console.error("Error updating student:", err)
@@ -518,147 +971,190 @@ export default function StudentListPage() {
       setIsSubmitting(false)
     }
   }
-
-  // --- AutoComplete Logic ---
-  const searchCustomFieldsSuggestions = (event: AutoCompleteCompleteEvent) => {
-    let query = event.query;
-    let _suggestions: FieldOption[] = [];
-
-    if (query.length === 0) {
-      _suggestions = availableCustomFields;
-    }
-    else {
-      _suggestions = availableCustomFields.filter(option => 
-        option.label.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-    setFilteredCustomFieldSuggestions(_suggestions);
-  };
   
-  const searchDocumentSuggestions = (event: AutoCompleteCompleteEvent) => {
-    let query = event.query;
-    let _suggestions: DocOption[] = [];
-
-    if (query.length === 0) {
-      _suggestions = availableDocuments;
-    }
-    else {
-      _suggestions = availableDocuments.filter(option => 
-        option.name.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-    setFilteredDocumentSuggestions(_suggestions);
-  };
-  
-  const itemTemplate = (item: FieldOption | DocOption, key: 'label' | 'name') => {
-      const text = (item as any)[key]
-      return <div className="p-2 text-sm hover:bg-gray-100">{text}</div>;
-  };
-
-  // --- Table Column Templates ---
-  const getVariantForStatus = (
-    status: string,
-  ): "default" | "secondary" | "destructive" | "outline" => {
-    switch (status?.toLowerCase()) {
-      case "approved":
-        return "default"
-      case "pending":
-        return "secondary"
-      case "rejected":
-        return "destructive"
-      default:
-        return "outline"
-    }
-  }
-
-  const statusBodyTemplate = (rowData: StudentList) => {
-    return (
-      <Badge variant={getVariantForStatus(rowData.status)}>
-        {rowData.status
-          ? rowData.status.charAt(0).toUpperCase() + rowData.status.slice(1)
-          : "N/A"}
-      </Badge>
-    )
-  }
-
-  const actionBodyTemplate = (rowData: StudentList) => {
-    return (
-      <div className="flex gap-2">
+  // --- Table Columns Definition ---
+  const columns: ColumnDef<StudentList>[] = [
+    {
+      accessorKey: "photo_path",
+      header: "Photo",
+      cell: ({ row }) => {
+        const student = row.original
+        let publicUrl = ""
+        if (student.photo_path) {
+          publicUrl = supabase.storage.from('student_documents').getPublicUrl(student.photo_path).data.publicUrl
+        }
+        return <StudentAvatar src={publicUrl} alt={student.fullname} />
+      },
+    },
+    {
+      accessorKey: "fullname",
+      header: ({ column }) => (
         <Button
-          variant="outline"
-          size="icon"
-          onClick={() => openModal(rowData.id, "view")}
-          title="View Student"
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          <Eye className="h-4 w-4" />
+          Full Name
+          <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={() => openModal(rowData.id, "edit")}
-          title="Edit Student"
-        >
-          <Edit className="h-4 w-4" />
-        </Button>
-      </div>
-    )
-  }
+      ),
+      cell: ({ row }) => <div className="font-medium">{row.getValue("fullname") || "N/A"}</div>,
+    },
+    {
+      accessorKey: "rollNumber",
+      header: "Roll Number",
+    },
+    {
+      accessorKey: "email",
+      header: "Email",
+      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("email")}</div>,
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => {
+        const status = row.getValue("status") as string
+        const variant = (
+          status === "approved" ? "default" :
+          status === "rejected" ? "destructive" :
+          "secondary"
+        ) as "default" | "destructive" | "secondary"
+        
+        return (
+          <Badge variant={variant} className="capitalize">
+            {status}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const student = row.original
+        return (
+          <div className="text-right">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <span className="sr-only">Open menu</span>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => openViewModal(student.id)}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openViewModal(student.id).then(() => {
+                  // A bit of a hack to open edit modal after view modal data is loaded
+                  // A better way would be to fetch data *then* open edit modal directly
+                  const checkData = setInterval(() => {
+                    if (selectedStudent && selectedStudent.id === student.id) {
+                      clearInterval(checkData);
+                      openEditModal(selectedStudent);
+                    }
+                  }, 100);
+                })}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit Student
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete (Not Implemented)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )
+      },
+    },
+  ]
 
-  const tableHeader = (
-    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-      <h3 className="text-xl font-semibold text-gray-800">Manage Students</h3>
-      <div className="relative w-full sm:max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          type="search"
-          placeholder="Search students..."
-          className="pl-9 w-full"
-          onChange={(e) => setGlobalFilter(e.target.value)}
-        />
-      </div>
-    </div>
-  )
+  // --- Table Instance ---
+  const table = useReactTable({
+    data: students,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
+    onSortingChange: setSorting,
+    state: {
+      sorting,
+      columnFilters,
+      globalFilter,
+    },
+  })
 
   // --- Modal Content Renderers ---
   
   const renderViewContent = () => (
     <div className="space-y-6">
+      {selectedStudent?.photo_path && (
+        <div className="flex justify-center">
+          <Avatar className="h-24 w-24 rounded-lg">
+            <AvatarImage 
+              src={supabase.storage.from('student_documents').getPublicUrl(selectedStudent.photo_path).data.publicUrl} 
+              alt="Student Photo" 
+              className="rounded-lg object-cover" 
+            />
+            <AvatarFallback className="rounded-lg bg-muted">
+              <UserRound className="h-10 w-10 text-muted-foreground" />
+            </AvatarFallback>
+          </Avatar>
+        </div>
+      )}
       <section>
-        <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Personal Details</h4>
-        <div className="space-y-2">
-          <DetailItem label="Full Name" value={currentStudent?.fullname} />
-          <DetailItem label="Roll Number" value={currentStudent?.['rollNumber']} />
-          <DetailItem label="Email" value={currentStudent?.email} />
-          <DetailItem label="Phone" value={currentStudent?.phone} />
-          <DetailItem label="Date of Birth" value={currentStudent?.dateofbirth} />
+        <h4 className="text-lg font-semibold mb-3">Personal Details</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <DetailItem label="Full Name" value={selectedStudent?.fullname} />
+          <DetailItem label="Roll Number" value={selectedStudent?.['rollNumber']} />
+          <DetailItem label="Email" value={selectedStudent?.email} />
+          <DetailItem label="Phone" value={selectedStudent?.phone} />
+          <DetailItem label="Date of Birth" value={selectedStudent?.dateofbirth ? format(parseISO(selectedStudent.dateofbirth), "PPP") : "N/A"} />
           <DetailItem label="Status" value={
-            <Badge variant={getVariantForStatus(currentStudent?.status || '')}>
-              {currentStudent?.status}
+            <Badge 
+              variant={
+                selectedStudent?.status === "approved" ? "default" :
+                selectedStudent?.status === "rejected" ? "destructive" :
+                "secondary"
+              }
+              className="capitalize"
+            >
+              {selectedStudent?.status}
             </Badge>
           }/>
-          <DetailItem label="Address" value={`${currentStudent?.address}, ${currentStudent?.city}, ${currentStudent?.state} - ${currentStudent?.zipcode}`} />
-          <DetailItem label="Secondary Phone" value={currentStudent?.secondary_phone} />
-          <DetailItem label="Family Phone" value={currentStudent?.family_phone} />
+          <DetailItem label="Address" value={`${selectedStudent?.address}, ${selectedStudent?.city}, ${selectedStudent?.state} - ${selectedStudent?.zipcode}`} />
+          <DetailItem label="Secondary Phone" value={selectedStudent?.secondary_phone} />
         </div>
       </section>
 
-      {currentStudent?.custom_data && Object.keys(currentStudent.custom_data).length > 0 && (
+      <Separator />
+
+      {selectedStudent?.custom_data && Object.keys(selectedStudent.custom_data).length > 0 && (
         <section>
-          <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Additional Information</h4>
-          <div className="space-y-2">
-            {Object.entries(currentStudent.custom_data).map(([key, value]) => (
+          <h4 className="text-lg font-semibold mb-3">Additional Information</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(selectedStudent.custom_data).map(([key, value]) => (
               <DetailItem key={key} label={key} value={value} />
             ))}
           </div>
         </section>
       )}
 
-      {currentStudent?.documents && currentStudent.documents.length > 0 && (
+      {selectedStudent?.documents && selectedStudent.documents.length > 0 && (
         <section>
-          <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Uploaded Documents</h4>
+          <h4 className="text-lg font-semibold mb-3">Uploaded Documents</h4>
+          {/* 🌟 NEW: DocumentViewer component added here 🌟 */}
+          <DocumentViewer documents={selectedStudent.documents} supabase={supabase} />
           <div className="space-y-2">
-            {currentStudent.documents.map((doc) => (
-              <DocumentLinkItem key={doc.path} doc={doc} />
+            {selectedStudent.documents
+              .filter(doc => !doc.fileType || !doc.fileType.startsWith("image/")) // Only show non-images here
+              .map((doc) => (
+                <DocumentLinkItem key={doc.path} doc={doc} supabase={supabase} />
             ))}
           </div>
         </section>
@@ -666,179 +1162,305 @@ export default function StudentListPage() {
     </div>
   )
 
-  const renderEditContent = () => (
-    <form onSubmit={handleEditSubmit} className="space-y-6">
-      <section>
-        <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Personal Details</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FormInputGroup label="First Name" name="firstname" value={editFormData.firstname || ""} onChange={handleEditChange} required />
-          <FormInputGroup label="Middle Name" name="middlename" value={editFormData.middlename || ""} onChange={handleEditChange} />
-          <FormInputGroup label="Last Name" name="lastname" value={editFormData.lastname || ""} onChange={handleEditChange} required />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          <FormInputGroup label="Email Address" name="email" type="email" value={editFormData.email || ""} onChange={handleEditChange} required />
-          <FormInputGroup label="Roll Number" name="rollNumber" value={editFormData['rollNumber'] || ""} onChange={handleEditChange} required />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          <FormInputGroup label="Primary Phone" name="phone" type="tel" value={editFormData.phone || ""} onChange={handleEditChange} required />
-          <FormInputGroup label="Date of Birth" name="dateofbirth" type="date" value={editFormData.dateofbirth || ""} onChange={handleEditChange} required />
-        </div>
-        <div className="mt-4">
-          <FormInputGroup label="Address" name="address" value={editFormData.address || ""} onChange={handleEditChange} required />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          <FormInputGroup label="City" name="city" value={editFormData.city || ""} onChange={handleEditChange} required />
-          <FormInputGroup label="State" name="state" value={editFormData.state || ""} onChange={handleEditChange} required />
-          <FormInputGroup label="ZIP Code" name="zipcode" value={editFormData.zipcode || ""} onChange={handleEditChange} required />
-        </div>
-        <div className="mt-4">
-          <Label htmlFor="status" className="font-semibold">Enrollment Status</Label>
-          <Dropdown 
-            id="status"
-            value={editFormData.status} 
-            options={statusOptions} 
-            onChange={handleStatusChange} 
-            placeholder="Select a Status"
-            className="w-full p-inputtext-sm"
-          />
-        </div>
-      </section>
-
-      {/* --- Manage Custom Fields --- */}
-      <section>
-        <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Additional Information</h4>
-        <div className="space-y-3">
-          {Object.keys(editFormData.custom_data || {}).length === 0 && (
-             <p className="text-sm text-gray-500 italic">No additional information added.</p>
-          )}
-          {Object.entries(editFormData.custom_data || {}).map(([key, value]) => (
-            <div key={key} className="flex items-end gap-2">
-              <FormInputGroup
-                label={key}
-                name={key}
-                value={value}
-                onChange={(e) => handleCustomFieldChange(key, e.target.value)}
-                className="flex-1"
-              />
-              <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveCustomField(key)} title={`Remove ${key}`}>
-                <Trash2 className="w-4 h-4 text-red-600" />
-              </Button>
-            </div>
-          ))}
-
-          <div className="mt-4 p-3 bg-gray-100 rounded-lg border">
-            <h5 className="text-sm font-semibold mb-2">Add New Field</h5>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <AutoComplete 
-                value={selectedCustomField} 
-                suggestions={filteredCustomFieldSuggestions} 
-                completeMethod={searchCustomFieldsSuggestions} 
-                onChange={(e) => setSelectedCustomField(e.value)} 
-                field="label"
-                placeholder="Search field to add"
-                dropdown
-                itemTemplate={(item) => itemTemplate(item as FieldOption, 'label')}
-                className="flex-1 w-full"
-                inputClassName="p-inputtext p-component w-full px-3 py-2 border border-gray-300 rounded-md focus:border-blue-500 focus:ring-1 transition text-sm"
-              />
-              <Button
-                type="button"
-                onClick={handleAddCustomFieldToEdit}
-                disabled={typeof selectedCustomField !== 'object' || !selectedCustomField}
-                className="w-full sm:w-auto"
-              >
-                <Plus size={16} className="mr-2" />
-                Add Field
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* --- Manage Documents --- */}
-      <section>
-        <h4 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Manage Documents</h4>
+  const renderEditForm = () => (
+    <form onSubmit={handleEditSubmit}>
+      <Tabs defaultValue="personal" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="personal">Personal</TabsTrigger>
+          <TabsTrigger value="admission">Admission</TabsTrigger>
+          <TabsTrigger value="application">Application</TabsTrigger>
+          <TabsTrigger value="docs">Docs</TabsTrigger>
+        </TabsList>
         
-        <div className="space-y-2">
-          {(editFormData.documents || []).length === 0 && filesToAdd.length === 0 && (
-            <p className="text-sm text-gray-500 italic">No documents uploaded.</p>
-          )}
+        {/* Personal & Parent Tab */}
+        <TabsContent value="personal" className="space-y-6 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Personal Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="First Name" name="firstname" value={editFormData.firstname || ""} onChange={handleEditChange} required />
+                <FormInputGroup label="Middle Name" name="middlename" value={editFormData.middlename || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Last Name" name="lastname" value={editFormData.lastname || ""} onChange={handleEditChange} required />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormDatePickerGroup label="Date of Birth" date={editFormDateOfBirth} setDate={setEditFormDateOfBirth} required />
+                <FormSelectGroup label="Gender" name="gender" value={editFormData.gender} onValueChange={(val) => handleEditSelectChange("gender", val)} options={genderOptions} placeholder="Select gender" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInputGroup label="Email Address" name="email" type="email" value={editFormData.email || ""} onChange={handleEditChange} required />
+                <FormInputGroup label="Roll Number" name="rollNumber" value={editFormData['rollNumber'] || ""} onChange={handleEditChange} required />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <FormInputGroup label="Primary Phone" name="phone" type="tel" value={editFormData.phone || ""} onChange={handleEditChange} required />
+                 <FormInputGroup label="Student Mobile" name="student_mobile_no" type="tel" value={editFormData.student_mobile_no || ""} onChange={handleEditChange} />
+                 <FormInputGroup label="Secondary Phone" name="secondary_phone" type="tel" value={editFormData.secondary_phone || ""} onChange={handleEditChange} />
+              </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInputGroup label="Nationality" name="nationality" value={editFormData.nationality || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Place of Birth" name="place_of_birth" value={editFormData.place_of_birth || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Religion" name="religion" value={editFormData.religion || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Caste" name="caste" value={editFormData.caste || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Blood Group" name="blood_group" value={editFormData.blood_group || ""} onChange={handleEditChange} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <FormInputGroup label="Aadhar Card Number" name="aadhar_card_number" value={editFormData.aadhar_card_number || ""} onChange={handleEditChange} />
+                 <FormInputGroup label="PAN Number" name="pan_no" value={editFormData.pan_no || ""} onChange={handleEditChange} />
+              </div>
+            </CardContent>
+          </Card>
           
-          {(editFormData.documents || []).map((doc) => (
-            <div key={doc.path} className="flex items-center justify-between p-2 bg-gray-50 rounded-md border">
-              <div className="flex items-center gap-2">
-                <File className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium">{doc.name}</span>
-                <span className="text-xs text-gray-500">({doc.fileName})</span>
+          <Card>
+            <CardHeader>
+              <CardTitle>Parent / Guardian Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="Father's Name" name="father_name" value={editFormData.father_name || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Father's Occupation" name="father_occupation" value={editFormData.father_occupation || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Father's Annual Income" name="father_annual_income" value={editFormData.father_annual_income || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Father's Mobile" name="father_mobile_no" type="tel" value={editFormData.father_mobile_no || ""} onChange={handleEditChange} />
               </div>
-              <Button type="button" variant="ghost" size="icon" onClick={() => stageFileForRemoval(doc)} title="Remove this document">
-                <Trash2 className="w-4 h-4 text-red-600" />
-              </Button>
-            </div>
-          ))}
-
-          {filesToAdd.map((doc) => (
-             <div key={doc.id} className="flex items-center justify-between p-2 bg-green-50 rounded-md border border-green-200">
-              <div className="flex items-center gap-2">
-                <Upload className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium">{doc.name}</span>
-                <span className="text-xs text-gray-500">({doc.file.name})</span>
+              <Separator />
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="Mother's Name" name="mother_name" value={editFormData.mother_name || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Mother's Occupation" name="mother_occupation" value={editFormData.mother_occupation || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Mother's Annual Income" name="mother_annual_income" value={editFormData.mother_annual_income || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Mother's Mobile" name="mother_mobile_no" type="tel" value={editFormData.mother_mobile_no || ""} onChange={handleEditChange} />
               </div>
-              <Button type="button" variant="ghost" size="icon" onClick={() => cancelStagedFile(doc.id)} title="Cancel upload">
-                <X className="w-4 h-4 text-gray-700" />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 p-3 bg-gray-100 rounded-lg border">
-          <h5 className="text-sm font-semibold mb-2">Add New Document</h5>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-             <div className="space-y-1">
-                <Label htmlFor="docTypeAutoComplete">Document Type*</Label>
-                <AutoComplete
-                  id="docTypeAutoComplete"
-                  value={selectedDocument} 
-                  suggestions={filteredDocumentSuggestions} 
-                  completeMethod={searchDocumentSuggestions} 
-                  onChange={(e) => setSelectedDocument(e.value)} 
-                  field="name"
-                  placeholder="Search document type"
-                  dropdown
-                  itemTemplate={(item) => itemTemplate(item as DocOption, 'name')}
-                  className="w-full"
-                  inputClassName="p-inputtext p-component w-full px-3 py-2 border border-gray-300 rounded-md focus:border-blue-500 focus:ring-1 transition text-sm"
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Admission & Address Tab */}
+        <TabsContent value="admission" className="space-y-6 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Admission Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInputGroup label="Admission Year" name="admission_year" value={editFormData.admission_year || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Admission Fees" name="admission_fees" type="number" value={editFormData.admission_fees || ""} onChange={handleEditChange} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormSearchableSelectGroup
+                  label="Course"
+                  value={editFormData.course_id ?? null}
+                  onChange={(val) => handleEditSearchableSelectChange("course_id", val)}
+                  options={allCourseOptions}
+                  placeholder="Select course"
+                  required
                 />
-             </div>
-             <div className="space-y-1">
-                <Label htmlFor="newDocFileInput">Document File*</Label>
-                <Input
-                  id="newDocFileInput"
-                  name="newDocFileInput"
-                  type="file"
-                  onChange={(e) => setNewDocFile(e.target.files?.[0] || null)}
+                <FormSearchableSelectGroup
+                  label="Semester"
+                  value={editFormData.semester_id ?? null}
+                  onChange={(val) => handleEditSearchableSelectChange("semester_id", val)}
+                  options={semesterOptions} // This is already filtered based on editFormData.course_id
+                  placeholder="Select semester"
+                  disabled={!editFormData.course_id}
+                  required
                 />
-             </div>
-          </div>
-          <Button 
-            type="button" 
-            size="sm" 
-            className="mt-3" 
-            onClick={stageFileForUpload}
-            disabled={typeof selectedDocument !== 'object' || !newDocFile}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Document to List
-          </Button>
-        </div>
-      </section>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormSelectGroup label="Enrollment Status" name="status" value={editFormData.status} onValueChange={(val) => handleEditSelectChange("status", val)} options={statusOptions} placeholder="Select status" required />
+                <FormSelectGroup label="Promotion Status" name="promotion_status" value={editFormData.promotion_status} onValueChange={(val) => handleEditSelectChange("promotion_status", val)} options={promotionStatusOptions} placeholder="Select status" required />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle>Address Details</CardTitle>
+              <CardDescription>This is the primary (correspondence) address.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormInputGroup label="Address Line" name="address" value={editFormData.address || ""} onChange={handleEditChange} required />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="City" name="city" value={editFormData.city || ""} onChange={handleEditChange} required />
+                <FormInputGroup label="State" name="state" value={editFormData.state || ""} onChange={handleEditChange} required />
+                <FormInputGroup label="ZIP Code" name="zipcode" value={editFormData.zipcode || ""} onChange={handleEditChange} required />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Application & Category Tab */}
+        <TabsContent value="application" className="space-y-6 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Original Application Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="Form No." name="form_no" value={editFormData.form_no || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Registration No." name="registration_no" value={editFormData.registration_no || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Merit No." name="merit_no" value={editFormData.merit_no || ""} onChange={handleEditChange} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInputGroup label="Quota Selection" name="quota_selection" value={editFormData.quota_selection || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Admission Type" name="admission_type" value={editFormData.admission_type || ""} onChange={handleEditChange} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInputGroup label="Discipline" name="discipline" value={editFormData.discipline || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Branch Preferences" name="branch_preferences" value={editFormData.branch_preferences || ""} onChange={handleEditChange} />
+              </div>
+              <FormInputGroup label="How did you know?" name="how_did_you_know" value={editFormData.how_did_you_know || ""} onChange={handleEditChange} />
+            </CardContent>
+          </Card>
+          
+           <Card>
+            <CardHeader>
+              <CardTitle>Category Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormInputGroup label="Admission Category" name="admission_category" value={editFormData.admission_category || ""} onChange={handleEditChange} />
+                <FormInputGroup label="Category Type" name="category_type" value={editFormData.category_type || ""} onChange={handleEditChange} />
+              </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormSelectGroup label="Domicile of Maharashtra" name="domicile_of_maharashtra" value={editFormData.domicile_of_maharashtra} onValueChange={(val) => handleEditSelectChange("domicile_of_maharashtra", val)} options={yesNoOptions} placeholder="Select Y/N" />
+                <FormSelectGroup label="PH/Handicap" name="phd_handicap" value={editFormData.phd_handicap} onValueChange={(val) => handleEditSelectChange("phd_handicap", val)} options={yesNoOptions} placeholder="Select Y/N" />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Documents & Custom Fields Tab */}
+        <TabsContent value="docs" className="space-y-6 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Manage Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                {(editFormData.documents || []).length === 0 && filesToAdd.length === 0 && (
+                  <p className="text-sm text-muted-foreground italic">No documents uploaded.</p>
+                )}
+                
+                {(editFormData.documents || []).map((doc) => (
+                  <div key={doc.path} className="flex items-center justify-between p-2 bg-secondary rounded-md border">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <File className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                      <span className="text-sm font-medium truncate">{doc.name}</span>
+                      <span className="text-xs text-muted-foreground truncate">({doc.fileName})</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => stageFileForRemoval(doc)} title="Remove this document">
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
 
+                {filesToAdd.map((doc) => (
+                   <div key={doc.id} className="flex items-center justify-between p-2 bg-green-900/10 rounded-md border border-green-700/20">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <Upload className="w-4 h-4 text-green-600 flex-shrink-0" />
+                      <span className="text-sm font-medium text-green-700 truncate">{doc.name}</span>
+                      <span className="text-xs text-muted-foreground truncate">({doc.file.name})</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => cancelStagedFile(doc.id)} title="Cancel upload">
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 p-4 bg-muted rounded-lg border">
+                <h5 className="text-sm font-semibold mb-2">Add New Document</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                   <div className="space-y-2">
+                      <Label>Document Type*</Label>
+                      <SearchableSelect
+                        options={availableDocuments.map(d => ({ label: d.name, value: d.name }))}
+                        value={selectedDocument ? selectedDocument.name : null}
+                        onChange={(val) => setSelectedDocument(val ? { name: val, description: '' } : null)}
+                        placeholder="Search document type"
+                      />
+                   </div>
+                   <div className="space-y-2">
+                      <Label htmlFor="newDocFileInput">Document File*</Label>
+                      <Input
+                        id="newDocFileInput"
+                        name="newDocFileInput"
+                        type="file"
+                        onChange={(e) => setNewDocFile(e.target.files?.[0] || null)}
+                      />
+                   </div>
+                </div>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  className="mt-3" 
+                  onClick={stageFileForUpload}
+                  disabled={!selectedDocument || !newDocFile}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Document to List
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle>Additional Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {Object.keys(editFormData.custom_data || {}).length === 0 && (
+                   <p className="text-sm text-muted-foreground italic">No additional information added.</p>
+                )}
+                {Object.entries(editFormData.custom_data || {}).map(([key, value]) => (
+                  <div key={key} className="flex items-end gap-2">
+                    <FormInputGroup
+                      label={key}
+                      name={key}
+                      value={value}
+                      onChange={(e) => handleCustomFieldChange(key, e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveCustomField(key)} title={`Remove ${key}`}>
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+
+                <div className="mt-4 p-4 bg-muted rounded-lg border">
+                  <h5 className="text-sm font-semibold mb-2">Add New Field</h5>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <SearchableSelect
+                      options={availableCustomFields.map(f => ({ label: f.label, value: f.label }))}
+                      value={selectedCustomField ? selectedCustomField.label : null}
+                      onChange={(val) => setSelectedCustomField(val ? { label: val, type: '' } : null)}
+                      placeholder="Search field to add"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleAddCustomFieldToEdit}
+                      disabled={!selectedCustomField}
+                      className="w-full sm:w-auto"
+                      size="sm"
+                    >
+                      <Plus size={16} className="mr-2" />
+                      Add Field
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+      
       {/* Submission Buttons */}
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button type="button" variant="ghost" onClick={closeModal}>
-          <X className="h-4 w-4 mr-2" />
-          Cancel
-        </Button>
+      <DialogFooter className="pt-6 mt-6 border-t">
+        <DialogClose asChild>
+          <Button type="button" variant="ghost" onClick={() => setIsEditModalOpen(false)}>
+            <X className="h-4 w-4 mr-2" />
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -847,36 +1469,20 @@ export default function StudentListPage() {
           )}
           Save Changes
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   )
   
-  // Modal footer (only for view mode)
-  const viewModalFooter = (
-    <div className="flex justify-end gap-2">
-      <Button 
-        variant="secondary" 
-        onClick={() => currentStudent && openModal(currentStudent.id, "edit")}
-      >
-        <Edit className="h-4 w-4 mr-2" />
-        Edit
-      </Button>
-      <Button variant="outline" onClick={closeModal}>
-        Close
-      </Button>
-    </div>
-  )
-
   // --- Main Page Render ---
   return (
     <div className="p-4 md:p-8 space-y-6">
       {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="text-3xl font-bold tracking-tight">
             Student List
           </h1>
-          <p className="text-lg text-gray-600">
+          <p className="text-lg text-muted-foreground">
             View, manage, and search all student enrollments.
           </p>
         </div>
@@ -897,93 +1503,201 @@ export default function StudentListPage() {
         </Alert>
       )}
 
-      {/* 3. Data Table */}
-      <Card className="overflow-hidden shadow-lg">
-        <CardContent className="p-0">
-          <DataTable
-            value={students}
-            loading={loading}
-            paginator
-            rows={10}
-            rowsPerPageOptions={[10, 25, 50]}
-            globalFilter={globalFilter}
-            header={tableHeader}
-            emptyMessage="No students found."
-            className="w-full"
-            removableSort
-            dataKey="id"
-          >
-            <Column
-              field="fullname"
-              header="Full Name"
-              sortable
-              body={(rowData: StudentList) => (
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gray-100 rounded-full">
-                    <UserRound className="w-4 h-4 text-gray-600" />
-                  </div>
-                  <span className="font-medium text-gray-900">
-                    {rowData.fullname || "N/A"}
-                  </span>
-                </div>
-              )}
-            />
-            <Column
-              field="rollNumber"
-              header="Roll Number"
-              sortable
-            />
-            <Column field="email" header="Email" />
-            <Column field="phone" header="Phone" />
-            <Column
-              field="status"
-              header="Status"
-              sortable
-              body={statusBodyTemplate}
-            />
-            <Column
-              header="Actions"
-              body={actionBodyTemplate}
-              style={{ width: "120px" }}
-              align="center"
-            />
-          </DataTable>
+      {/* 3. Data Table Card */}
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle>Manage Students</CardTitle>
+          {/* Filter Bar */}
+          <div className="py-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <SearchableSelect
+                options={streamOptions}
+                value={selectedStream}
+                onChange={handleStreamChange}
+                placeholder="Filter by Stream..."
+                disabled={loadingFilters}
+              />
+              <SearchableSelect
+                options={courseOptions}
+                value={selectedCourse}
+                onChange={handleCourseChange}
+                placeholder="Filter by Course..."
+                disabled={loadingFilters || !selectedStream}
+              />
+              <SearchableSelect
+                options={semesterOptions}
+                value={selectedSemester}
+                onChange={handleSemesterChange}
+                placeholder="Filter by Semester..."
+                disabled={loadingFilters || !selectedCourse}
+              />
+            </div>
+            <div className="flex flex-col md:flex-row gap-2 justify-between">
+              {/* Global Search Input */}
+              <div className="relative w-full md:max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search name, email, roll..."
+                  className="pl-9 w-full"
+                  value={globalFilter}
+                  onChange={(e) => setGlobalFilter(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={handleFilterClear} disabled={loading}>
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Clear
+                </Button>
+                <Button onClick={handleFilterSearch} disabled={loading}>
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Filter className="h-4 w-4 mr-2" />
+                  )}
+                  Search
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => {
+                      return (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && "selected"}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="h-24 text-center">
+                      {loading ? "Loading students..." : "No results found."}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {/* Pagination */}
+          <div className="flex items-center justify-end space-x-2 py-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      {/* 4. STUDENT DETAIL MODAL (POPUP) */}
-      <Dialog
-        header={
-          modalMode === "view" ? "Student Details" : "Edit Student Information"
-        }
-        visible={isModalVisible}
-        style={{ width: "90vw", maxWidth: "800px" }}
-        onHide={closeModal}
-        footer={modalMode === "view" ? viewModalFooter : null}
-        modal
-        className="p-dialog"
-      >
-        <div className="p-4 max-h-[80vh] overflow-y-auto">
-          {modalLoading && (
-            <div className="flex items-center justify-center h-48">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            </div>
-          )}
-
-          {modalError && (
-             <Alert variant="destructive" className="mb-4">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{modalError}</AlertDescription>
-            </Alert>
-          )}
+      {/* 4. STUDENT VIEW MODAL */}
+      <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
+        {/* 🌟 MODIFIED: Added scrolling classes 🌟 */}
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Student Details</DialogTitle>
+          </DialogHeader>
           
-          {!modalLoading && currentStudent && (
-            <>
-              {modalMode === "view" ? renderViewContent() : renderEditContent()}
-            </>
-          )}
-        </div>
+          {/* 🌟 MODIFIED: This middle div is now the scrollable area 🌟 */}
+          <div className="flex-1 overflow-y-auto p-6 pt-0">
+            {modalLoading && (
+              <div className="flex items-center justify-center h-48">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            )}
+            {modalError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{modalError}</AlertDescription>
+              </Alert>
+            )}
+            {!modalLoading && selectedStudent && (
+              // renderViewContent is now directly in the scrollable area
+              renderViewContent()
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="default" 
+              onClick={() => selectedStudent && openEditModal(selectedStudent)}
+              disabled={!selectedStudent}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 5. STUDENT EDIT MODAL */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        {/* 🌟 MODIFIED: Added scrolling classes 🌟 */}
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Student Information</DialogTitle>
+            <DialogDescription>
+              Make changes to the student's profile. Click save when you're done.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* 🌟 MODIFIED: This middle div is now the scrollable area 🌟 */}
+          <div className="flex-1 overflow-y-auto p-6 pt-0">
+            {modalError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{modalError}</AlertDescription>
+              </Alert>
+            )}
+            {/* renderEditForm has its own footer, so it's placed directly */}
+            {renderEditForm()}
+          </div>
+        </DialogContent>
       </Dialog>
     </div>
   )
