@@ -14,19 +14,19 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 // --- Icons ---
-import { Plus, ChevronRight, Loader2, Book, FlaskConical, AlertTriangle } from "lucide-react"
+import { Plus, ChevronRight, Loader2, Book, FlaskConical, AlertTriangle, GraduationCap, Calendar, Layers } from "lucide-react"
 
 // --- PrimeReact Components ---
 import { Dialog } from "primereact/dialog"
 import { Dropdown } from 'primereact/dropdown';
-import { InputSwitch } from 'primereact/inputswitch'; // <-- ADDED
+import { InputSwitch } from 'primereact/inputswitch';
 
 // --- PrimeReact CSS ---
 import "primereact/resources/themes/saga-blue/theme.css"
 import "primereact/resources/primereact.min.css"
 import "primeicons/primeicons.css"
 
-// --- Type Definitions ---
+// --- Type Definitions (Updated) ---
 interface Stream {
   id: string
   name: string
@@ -38,10 +38,16 @@ interface Course {
   description?: string
   stream_id: string
 }
-interface Semester {
+// NEW
+interface AcademicYear {
   id: string
   name: string
   course_id: string
+}
+interface Semester {
+  id: string
+  name: string
+  academic_year_id: string // Updated link
 }
 interface Subject {
   id: string
@@ -49,10 +55,10 @@ interface Subject {
   subject_code?: string
   type: "theory" | "practical"
   semester_id: string
-  is_optional: boolean // <-- ADDED
+  is_optional: boolean
 }
 
-type ModalType = "stream" | "course" | "semester" | "subject"
+type ModalType = "stream" | "course" | "academicYear" | "semester" | "subject" // Updated
 
 const subjectTypeOptions = [
   { label: 'Theory', value: 'theory' },
@@ -66,18 +72,21 @@ export default function AcademicsPage() {
   // --- Data State ---
   const [streams, setStreams] = useState<Stream[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]) // NEW
   const [semesters, setSemesters] = useState<Semester[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
 
   // --- Selection State ---
   const [selectedStream, setSelectedStream] = useState<Stream | null>(null)
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
+  const [selectedYear, setSelectedYear] = useState<AcademicYear | null>(null) // NEW
   const [selectedSemester, setSelectedSemester] = useState<Semester | null>(null)
 
   // --- Loading State ---
   const [loading, setLoading] = useState({
     streams: false,
     courses: false,
+    academicYears: false, // NEW
     semesters: false,
     subjects: false,
   })
@@ -94,29 +103,36 @@ export default function AcademicsPage() {
   // --- Data Fetching Functions ---
   const fetchStreams = async () => {
     setLoading(prev => ({ ...prev, streams: true }))
-    const { data, error } = await supabase.from("streams").select("*").order("name")
+    const { data } = await supabase.from("streams").select("*").order("name")
     if (data) setStreams(data)
     setLoading(prev => ({ ...prev, streams: false }))
   }
 
   const fetchCourses = async (streamId: string) => {
     setLoading(prev => ({ ...prev, courses: true }))
-    const { data, error } = await supabase.from("courses").select("*").eq("stream_id", streamId).order("name")
+    const { data } = await supabase.from("courses").select("*").eq("stream_id", streamId).order("name")
     if (data) setCourses(data)
     setLoading(prev => ({ ...prev, courses: false }))
   }
 
-  const fetchSemesters = async (courseId: string) => {
+  // NEW
+  const fetchAcademicYears = async (courseId: string) => {
+    setLoading(prev => ({ ...prev, academicYears: true }))
+    const { data } = await supabase.from("academic_years").select("*").eq("course_id", courseId).order("name")
+    if (data) setAcademicYears(data)
+    setLoading(prev => ({ ...prev, academicYears: false }))
+  }
+
+  const fetchSemesters = async (academicYearId: string) => {
     setLoading(prev => ({ ...prev, semesters: true }))
-    const { data, error } = await supabase.from("semesters").select("*").eq("course_id", courseId).order("name")
+    const { data } = await supabase.from("semesters").select("*").eq("academic_year_id", academicYearId).order("name")
     if (data) setSemesters(data)
     setLoading(prev => ({ ...prev, semesters: false }))
   }
 
   const fetchSubjects = async (semesterId: string) => {
     setLoading(prev => ({ ...prev, subjects: true }))
-    // Select all columns, including the new 'is_optional'
-    const { data, error } = await supabase.from("subjects").select("*").eq("semester_id", semesterId).order("name")
+    const { data } = await supabase.from("subjects").select("*").eq("semester_id", semesterId).order("name")
     if (data) setSubjects(data)
     setLoading(prev => ({ ...prev, subjects: false }))
   }
@@ -126,7 +142,7 @@ export default function AcademicsPage() {
     fetchStreams()
   }, [])
 
-  // --- Chained Data Loading ---
+  // --- Chained Data Loading (Updated) ---
   useEffect(() => {
     if (selectedStream) {
       fetchCourses(selectedStream.id)
@@ -138,12 +154,21 @@ export default function AcademicsPage() {
 
   useEffect(() => {
     if (selectedCourse) {
-      fetchSemesters(selectedCourse.id)
+      fetchAcademicYears(selectedCourse.id) // NEW
+    } else {
+      setAcademicYears([])
+    }
+    setSelectedYear(null) // NEW
+  }, [selectedCourse])
+
+  useEffect(() => {
+    if (selectedYear) {
+      fetchSemesters(selectedYear.id) // NEW
     } else {
       setSemesters([])
     }
     setSelectedSemester(null)
-  }, [selectedCourse])
+  }, [selectedYear])
 
   useEffect(() => {
     if (selectedSemester) {
@@ -156,8 +181,7 @@ export default function AcademicsPage() {
   // --- Modal & Form Handling ---
   const openModal = (type: ModalType) => {
     setModalType(type)
-    // Clear old data, set default for is_optional
-    setFormData(type === 'subject' ? { is_optional: false } : {})
+    setFormData(type === 'subject' ? { is_optional: false, type: 'theory' } : {})
     setModalError(null)
     setIsModalVisible(true)
   }
@@ -198,21 +222,31 @@ export default function AcademicsPage() {
           dataToInsert.stream_id = selectedStream?.id
           break
         
+        // NEW
+        case "academicYear":
+          table = "academic_years"
+          dataToInsert.course_id = selectedCourse?.id
+          break
+        
         case "semester":
           table = "semesters"
-          dataToInsert.course_id = selectedCourse?.id
+          dataToInsert.academic_year_id = selectedYear?.id // Updated link
           break
         
         case "subject":
           table = "subjects"
           dataToInsert.semester_id = selectedSemester?.id
-          // Ensure is_optional is a boolean
           dataToInsert.is_optional = !!dataToInsert.is_optional;
           break
       }
       
-      if (!table || (modalType === 'course' && !dataToInsert.stream_id) || (modalType === 'semester' && !dataToInsert.course_id) || (modalType === 'subject' && !dataToInsert.semester_id)) {
-        throw new Error("Missing required relationship ID.")
+      // Updated validation
+      if (!table || 
+          (modalType === 'course' && !dataToInsert.stream_id) || 
+          (modalType === 'academicYear' && !dataToInsert.course_id) || 
+          (modalType === 'semester' && !dataToInsert.academic_year_id) || 
+          (modalType === 'subject' && !dataToInsert.semester_id)) {
+        throw new Error("Missing required parent selection.")
       }
 
       const { error: insertError, data: insertData } = await supabase
@@ -234,6 +268,9 @@ export default function AcademicsPage() {
         case "course":
           setCourses(prev => [...prev, data as Course].sort((a,b) => a.name.localeCompare(b.name)))
           break
+        case "academicYear": // NEW
+          setAcademicYears(prev => [...prev, data as AcademicYear].sort((a,b) => a.name.localeCompare(b.name)))
+          break
         case "semester":
           setSemesters(prev => [...prev, data as Semester].sort((a,b) => a.name.localeCompare(b.name)))
           break
@@ -252,7 +289,7 @@ export default function AcademicsPage() {
     }
   }
 
-  // --- Dynamic Modal Content ---
+  // --- Dynamic Modal Content (Updated) ---
   const renderModalContent = () => {
     switch (modalType) {
       case "stream":
@@ -267,6 +304,13 @@ export default function AcademicsPage() {
           <>
             <FormInputGroup label="Course Name" name="name" value={formData.name || ""} onChange={handleFormChange} required />
             <FormTextareaGroup label="Description (Optional)" name="description" value={formData.description || ""} onChange={handleFormChange} />
+          </>
+        )
+      // NEW
+      case "academicYear":
+        return (
+          <>
+            <FormInputGroup label="Academic Year Name" name="name" value={formData.name || ""} onChange={handleFormChange} placeholder="e.g., First Year, Second Year" required />
           </>
         )
       case "semester":
@@ -293,8 +337,6 @@ export default function AcademicsPage() {
                 required
               />
             </div>
-            
-            {/* --- UPDATED: Optional Subject Toggle --- */}
             <div className="flex items-center gap-3 pt-2">
               <InputSwitch
                 id="is_optional"
@@ -321,12 +363,12 @@ export default function AcademicsPage() {
             Academics Management
           </h1>
           <p className="text-lg text-gray-600">
-            Manage streams, courses, semesters, and subjects.
+            Manage streams, courses, years, semesters, and subjects.
           </p>
         </div>
       </div>
 
-      {/* 2. Cascading Columns */}
+      {/* 2. Cascading Columns (Updated) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* --- Column 1: Streams --- */}
@@ -346,6 +388,7 @@ export default function AcademicsPage() {
                   <ListItem
                     key={stream.id}
                     name={stream.name}
+                    icon={<GraduationCap className="h-4 w-4 text-gray-500" />}
                     isActive={selectedStream?.id === stream.id}
                     onClick={() => setSelectedStream(stream)}
                   />
@@ -365,7 +408,7 @@ export default function AcademicsPage() {
           </CardHeader>
           <CardContent>
             {!selectedStream ? (
-              <p className="text-sm text-gray-500 text-center">Select a stream to see courses.</p>
+              <p className="text-sm text-gray-500 text-center">Select a stream.</p>
             ) : loading.courses ? (
               <Loader2 className="h-6 w-6 animate-spin mx-auto" />
             ) : (
@@ -374,6 +417,7 @@ export default function AcademicsPage() {
                   <ListItem
                     key={course.id}
                     name={course.name}
+                    icon={<Book className="h-4 w-4 text-gray-500" />}
                     isActive={selectedCourse?.id === course.id}
                     onClick={() => setSelectedCourse(course)}
                   />
@@ -383,17 +427,46 @@ export default function AcademicsPage() {
           </CardContent>
         </Card>
 
-        {/* --- Column 3: Semesters --- */}
+        {/* --- Column 3: Academic Years (NEW) --- */}
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl font-bold">Semesters</CardTitle>
-            <Button size="sm" onClick={() => openModal('semester')} disabled={!selectedCourse}>
+            <CardTitle className="text-xl font-bold">Years</CardTitle>
+            <Button size="sm" onClick={() => openModal('academicYear')} disabled={!selectedCourse}>
               <Plus className="h-4 w-4 mr-2" /> Add
             </Button>
           </CardHeader>
           <CardContent>
             {!selectedCourse ? (
-              <p className="text-sm text-gray-500 text-center">Select a course to see semesters.</p>
+              <p className="text-sm text-gray-500 text-center">Select a course.</p>
+            ) : loading.academicYears ? (
+              <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+            ) : (
+              <div className="space-y-2">
+                {academicYears.map(year => (
+                  <ListItem
+                    key={year.id}
+                    name={year.name}
+                    icon={<Calendar className="h-4 w-4 text-gray-500" />}
+                    isActive={selectedYear?.id === year.id}
+                    onClick={() => setSelectedYear(year)}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* --- Column 4: Semesters (Updated) --- */}
+        <Card className="shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xl font-bold">Semesters</CardTitle>
+            <Button size="sm" onClick={() => openModal('semester')} disabled={!selectedYear}>
+              <Plus className="h-4 w-4 mr-2" /> Add
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {!selectedYear ? (
+              <p className="text-sm text-gray-500 text-center">Select a year.</p>
             ) : loading.semesters ? (
               <Loader2 className="h-6 w-6 animate-spin mx-auto" />
             ) : (
@@ -402,6 +475,7 @@ export default function AcademicsPage() {
                   <ListItem
                     key={sem.id}
                     name={sem.name}
+                    icon={<Layers className="h-4 w-4 text-gray-500" />}
                     isActive={selectedSemester?.id === sem.id}
                     onClick={() => setSelectedSemester(sem)}
                   />
@@ -410,33 +484,38 @@ export default function AcademicsPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* --- Column 4: Subjects --- */}
-        <Card className="shadow-lg">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl font-bold">Subjects</CardTitle>
-            <Button size="sm" onClick={() => openModal('subject')} disabled={!selectedSemester}>
-              <Plus className="h-4 w-4 mr-2" /> Add
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {!selectedSemester ? (
-              <p className="text-sm text-gray-500 text-center">Select a semester to see subjects.</p>
-            ) : loading.subjects ? (
-              <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-            ) : (
-              <div className="space-y-2">
-                {subjects.map(sub => (
-                  <SubjectListItem
-                    key={sub.id}
-                    subject={sub}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
+
+      {/* --- 3. Subjects Section (NEW) --- */}
+      <Card className="shadow-lg">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-xl font-bold">
+            Subjects for: <span className="text-blue-600">{selectedSemester?.name || "..."}</span>
+          </CardTitle>
+          <Button size="sm" onClick={() => openModal('subject')} disabled={!selectedSemester}>
+            <Plus className="h-4 w-4 mr-2" /> Add Subject
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {!selectedSemester ? (
+            <p className="text-sm text-gray-500 text-center">Select a stream, course, year, and semester to see subjects.</p>
+          ) : loading.subjects ? (
+            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+          ) : subjects.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center">No subjects found for this semester.</p>
+          ) : (
+            <div className="space-y-2">
+              {subjects.map(sub => (
+                <SubjectListItem
+                  key={sub.id}
+                  subject={sub}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
 
       {/* --- Creation Modal --- */}
       <Dialog
@@ -479,9 +558,10 @@ export default function AcademicsPage() {
  */
 const ListItem: React.FC<{
   name: string
+  icon: React.ReactNode
   isActive: boolean
   onClick: () => void
-}> = ({ name, isActive, onClick }) => (
+}> = ({ name, icon, isActive, onClick }) => (
   <button
     type="button"
     onClick={onClick}
@@ -491,7 +571,10 @@ const ListItem: React.FC<{
         : "bg-white hover:bg-gray-50 border-gray-200"
       }`}
   >
-    <span className="font-medium text-sm">{name}</span>
+    <div className="flex items-center gap-2">
+      <span className={isActive ? 'text-white' : 'text-gray-500'}>{icon}</span>
+      <span className="font-medium text-sm">{name}</span>
+    </div>
     <ChevronRight className={`h-4 w-4 ${isActive ? 'text-white' : 'text-gray-400'}`} />
   </button>
 )
@@ -512,8 +595,6 @@ const SubjectListItem: React.FC<{ subject: Subject }> = ({ subject }) => (
         <p className="text-xs text-gray-500">{subject.subject_code || 'No Code'}</p>
       </div>
     </div>
-
-    {/* --- UPDATED: Show type and optional status --- */}
     <div className="flex flex-col items-end gap-1">
       <Badge variant={subject.type === 'practical' ? 'default' : 'secondary'}
             className={subject.type === 'practical' ? 'bg-green-100 text-green-800' : ''}>

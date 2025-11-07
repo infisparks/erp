@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react"
 import { getSupabaseClient } from "@/lib/supabase/client"
+import { SupabaseClient } from "@supabase/supabase-js" // Imported SupabaseClient
 
 // --- UI Components ---
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar" // Imported Avatar
 
 // --- Icons ---
 import {
@@ -19,6 +21,7 @@ import {
   Search,
   CheckCheck,
   ClipboardEdit,
+  UserRound, // Imported UserRound
 } from "lucide-react"
 
 // --- PrimeReact Components ---
@@ -27,32 +30,70 @@ import { Dropdown } from 'primereact/dropdown';
 // --- Type Definitions ---
 interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
-interface Semester { id: string; name: string; course_id: string; }
+// --- NEW: Added AcademicYear and updated Semester ---
+interface AcademicYear { id: string; name: string; course_id: string; }
+interface Semester { id: string; name: string; academic_year_id: string; }
 
-// --- UPDATED: Simplified Student interface ---
+// --- UPDATED: Student interface ---
 interface Student { 
     id: string; // This will be the student's ID
     fullname: string | null; 
-    rollNumber: string; // This will come from student_semesters
-    promotion_status: string; // This will come from student_semesters
+    rollNumber: string;
+    promotion_status: string;
+    academicYearName: string; // --- NEW ---
+    semesterName: string; // --- NEW ---
+    photo_path: string | null; // --- NEW ---
 }
 
 // --- NEW: Type for Supabase query result ---
 type StudentSemesterRow = {
-  roll_number: string;
-  promotion_status: string;
+  promotion_status: string; // --- FIXED: roll_number removed ---
+  student_academic_years: {
+    academic_year_name: string;
+  } | null;
   students: {
     id: string;
     fullname: string | null;
-  } | null; // The join might return null
+    photo_path: string | null;
+    roll_number: string; // --- FIXED: roll_number is in here ---
+  } | null;
+  semesters: {
+    name: string;
+  } | null;
 };
 
+// --- Helper Functions ---
+const sortByName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { numeric: true });
 
-// --- Status options for the action dropdown ---
+// --- Avatar Component ---
+const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, className?: string }> = ({ src, alt, supabase, className = "h-10 w-10" }) => {
+  const publicUrl = useMemo(() => {
+    if (!src) return null;
+    return supabase.storage.from('student_documents').getPublicUrl(src).data.publicUrl;
+  }, [src, supabase]);
+
+  return (
+    <Avatar className={`${className} rounded-md`}>
+      <AvatarImage 
+        src={publicUrl || undefined} 
+        alt={alt || "Student Photo"} 
+        className="rounded-md object-cover"
+      />
+      <AvatarFallback className="rounded-md bg-muted">
+        <UserRound className="h-5 w-5 text-muted-foreground" />
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+// --- UPDATED: Status options ---
 const promotionStatusOptions = [
   { label: 'Set to: Eligible', value: 'Eligible' },
   { label: 'Set to: Hold (Not Promotable)', value: 'Hold' },
   { label: 'Set to: Promoted (Manual)', value: 'Promoted' },
+  { label: 'Set to: Drop', value: 'Drop' },
+  { label: 'Set to: Completed', value: 'Completed' },
+  { label: 'Set to: Leave', value: 'Leave' },
 ];
 
 // --- Main Status Management Page ---
@@ -62,74 +103,90 @@ export default function StudentStatusPage() {
   // --- Data State ---
   const [allStreams, setAllStreams] = useState<Stream[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([]); // --- NEW ---
   const [allSemesters, setAllSemesters] = useState<Semester[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
   // --- Filter Selections ---
   const [selectedStream, setSelectedStream] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string | null>(null); // --- NEW ---
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
   
   // --- Student List & Action State ---
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
-  const [newStatus, setNewStatus] = useState<string | null>(null); // State for the action dropdown
+  const [newStatus, setNewStatus] = useState<string | null>(null);
 
   // --- Loading & Error State ---
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
-  // --- Derived Filters ---
-  const courseOptions = useMemo(() => allCourses.filter(c => c.stream_id === selectedStream), [allCourses, selectedStream]);
-  const semesterOptions = useMemo(() => allSemesters.filter(s => s.course_id === selectedCourse), [allSemesters, selectedCourse]);
+  // --- UPDATED: Derived Filters (4-level cascade) ---
+  const courseOptions = useMemo(() => 
+    allCourses.filter(c => c.stream_id === selectedStream).sort(sortByName), 
+    [allCourses, selectedStream]
+  );
+  const academicYearOptions = useMemo(() => 
+    allAcademicYears.filter(ay => ay.course_id === selectedCourse).sort(sortByName), 
+    [allAcademicYears, selectedCourse]
+  );
+  const semesterOptions = useMemo(() => 
+    allSemesters.filter(s => s.academic_year_id === selectedAcademicYear).sort(sortByName), 
+    [allSemesters, selectedAcademicYear]
+  );
 
   // --- Data Fetching: Students (UPDATED) ---
   const fetchStudents = useCallback(async () => {
-    if (!selectedSemester || !selectedCourse) {
+    // We now only need selectedSemester, as it's unique
+    if (!selectedSemester) {
       setStudents([]);
       return;
     }
     setLoading(true);
     setStatusMessage(null);
     try {
-      // Query the join table 'student_semesters' and join 'students' table
+      // Query 'student_semesters' and join related tables
+      // --- FIXED: Removed roll_number from here ---
       const { data, error } = await supabase
         .from("student_semesters")
         .select(`
-          roll_number, 
           promotion_status,
-          students (id, fullname)
+          students (id, fullname, photo_path, roll_number), 
+          student_academic_years ( academic_year_name ),
+          semesters ( name )
         `)
         .eq("semester_id", selectedSemester)
-        .eq("course_id", selectedCourse)
         .order("students(fullname)");
       
       if (error) throw error;
 
-      // Transform the nested data into the flat 'Student' interface
-      const formattedStudents = (data as StudentSemesterRow[]) // Use the defined type
-        .map((item: StudentSemesterRow) => { // --- FIX: Added explicit type for 'item' ---
-          // Ensure we have a student record before proceeding
-          if (!item.students) return null; 
+      // Transform the nested data
+      const formattedStudents = (data as StudentSemesterRow[])
+        .map((item: StudentSemesterRow) => {
+          // --- FIXED: Check for item.students.roll_number ---
+          if (!item.students || !item.student_academic_years || !item.semesters) return null; 
           return {
-            id: item.students.id, // The main student ID
+            id: item.students.id,
             fullname: item.students.fullname,
-            rollNumber: item.roll_number, // Map from snake_case
-            promotion_status: item.promotion_status
+            rollNumber: item.students.roll_number, // --- FIXED: Get from students ---
+            promotion_status: item.promotion_status,
+            academicYearName: item.student_academic_years.academic_year_name,
+            semesterName: item.semesters.name,
+            photo_path: item.students.photo_path,
           }
         })
-        // --- FIX: Added explicit type for 'student' ---
         .filter((student: Student | null): student is Student => student !== null); 
       
       setStudents(formattedStudents || []);
-      setSelectedStudentIds([]); // Clear selection
+      setSelectedStudentIds([]);
     } catch (err: any) {
       setStatusMessage({ type: 'error', message: `Student Load Error: ${err.message}` });
     } finally {
       setLoading(false);
     }
-  }, [selectedSemester, selectedCourse, supabase]);
+  }, [selectedSemester, supabase]);
   
 
   // --- Initial Config & Student Fetch ---
@@ -137,19 +194,21 @@ export default function StudentStatusPage() {
     const fetchConfig = async () => {
       setLoading(true);
       try {
-        const [streamsRes, coursesRes, semestersRes] = await Promise.all([
+        const [streamsRes, coursesRes, ayRes, semestersRes] = await Promise.all([
           supabase.from("streams").select("id, name").order("name"),
           supabase.from("courses").select("id, name, stream_id").order("name"),
-          supabase.from("semesters").select("id, name, course_id").order("name"),
+          supabase.from("academic_years").select("id, name, course_id").order("name"), // --- NEW ---
+          supabase.from("semesters").select("id, name, academic_year_id").order("name"), // --- UPDATED ---
         ]);
         
         if (streamsRes.data) setAllStreams(streamsRes.data);
         if (coursesRes.data) setAllCourses(coursesRes.data);
+        if (ayRes.data) setAllAcademicYears(ayRes.data); // --- NEW ---
         if (semestersRes.data) setAllSemesters(semestersRes.data);
       } catch (err: any) {
         setStatusMessage({ type: 'error', message: `Config Error: ${err.message}` });
       } finally {
-        setLoading(false); // Only set loading false *after* config is done
+        setLoading(false);
       }
     };
     fetchConfig();
@@ -157,16 +216,15 @@ export default function StudentStatusPage() {
 
   // Re-fetch students when filters change
   useEffect(() => {
-    // We must have both course and semester to fetch
-    if (selectedCourse && selectedSemester) {
+    if (selectedSemester) {
       fetchStudents();
     } else {
-      setStudents([]); // Clear students if filters are incomplete
+      setStudents([]);
     }
-  }, [fetchStudents, selectedCourse, selectedSemester]);
+  }, [fetchStudents, selectedSemester]);
 
 
-  // --- Bulk Status Update Logic (UPDATED) ---
+  // --- Bulk Status Update Logic (Unchanged, still correct) ---
   const handleBulkStatusUpdate = async () => {
     if (!newStatus) {
       setStatusMessage({ type: 'error', message: 'Please select a new status to apply.' });
@@ -185,20 +243,18 @@ export default function StudentStatusPage() {
     setStatusMessage(null);
 
     try {
-      // Update the 'student_semesters' table, not the 'students' table
       const { error } = await supabase
         .from("student_semesters")
         .update({ promotion_status: newStatus })
-        .in("student_id", selectedStudentIds) // Match on the student ID
-        .eq("semester_id", selectedSemester); // And the specific semester
+        .in("student_id", selectedStudentIds)
+        .eq("semester_id", selectedSemester);
 
       if (error) throw error;
 
-      // Refresh the list to show new statuses
       await fetchStudents();
       setStatusMessage({ type: 'success', message: `${selectedStudentIds.length} students updated to "${newStatus}" successfully!` });
-      setNewStatus(null); // Reset dropdown
-      setSelectedStudentIds([]); // Clear selection
+      setNewStatus(null);
+      setSelectedStudentIds([]);
       
     } catch (err: any) {
       setStatusMessage({ type: 'error', message: `Update Failed: ${err.message}` });
@@ -229,12 +285,11 @@ export default function StudentStatusPage() {
   }, [students, studentSearch]);
 
   const handleSelectAll = () => {
-    // Selects all *filtered* students
     const filteredIds = filteredStudents.map(s => s.id);
     if (selectedStudentIds.length === filteredIds.length) {
-      setSelectedStudentIds([]); // Deselect all
+      setSelectedStudentIds([]);
     } else {
-      setSelectedStudentIds(filteredIds); // Select all
+      setSelectedStudentIds(filteredIds);
     }
   };
   
@@ -255,7 +310,6 @@ export default function StudentStatusPage() {
         <CardContent>
           {loading && !students.length && <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />}
 
-          {/* --- Global Messages --- */}
           {statusMessage && (
             <Alert variant={statusMessage.type === 'error' ? 'destructive' : 'default'} className={`mb-4 ${statusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
               <AlertTriangle className="h-4 w-4" />
@@ -264,12 +318,13 @@ export default function StudentStatusPage() {
             </Alert>
           )}
           
-          {/* --- Filter --- */}
+          {/* --- UPDATED: 4-Level Filter --- */}
           <h3 className="text-xl font-semibold mb-4 border-b pb-2">Filter Students</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <DropdownSelect label="1. Stream" value={selectedStream} onChange={(id) => { setSelectedStream(id); setSelectedCourse(null); setSelectedSemester(null); }} options={allStreams} placeholder="Select Stream" />
-            <DropdownSelect label="2. Course" value={selectedCourse} onChange={(id) => { setSelectedCourse(id); setSelectedSemester(null); }} options={courseOptions} placeholder="Select Course" disabled={!selectedStream} />
-            <DropdownSelect label="3. Semester" value={selectedSemester} onChange={setSelectedSemester} options={semesterOptions} placeholder="Current Semester" disabled={!selectedCourse} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <DropdownSelect label="1. Stream" value={selectedStream} onChange={(id) => { setSelectedStream(id); setSelectedCourse(null); setSelectedAcademicYear(null); setSelectedSemester(null); }} options={allStreams} placeholder="Select Stream" />
+            <DropdownSelect label="2. Course" value={selectedCourse} onChange={(id) => { setSelectedCourse(id); setSelectedAcademicYear(null); setSelectedSemester(null); }} options={courseOptions} placeholder="Select Course" disabled={!selectedStream} />
+            <DropdownSelect label="3. Academic Year" value={selectedAcademicYear} onChange={(id) => { setSelectedAcademicYear(id); setSelectedSemester(null); }} options={academicYearOptions} placeholder="Select Year" disabled={!selectedCourse} />
+            <DropdownSelect label="4. Semester" value={selectedSemester} onChange={setSelectedSemester} options={semesterOptions} placeholder="Select Semester" disabled={!selectedAcademicYear} />
           </div>
 
           {/* --- Student List --- */}
@@ -280,7 +335,6 @@ export default function StudentStatusPage() {
                 Student List ({students.length})
               </h3>
               
-              {/* --- Search & Select All --- */}
               <div className="flex flex-col md:flex-row gap-4 justify-between mb-4">
                 <div className="relative flex-1 min-w-[300px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -296,14 +350,14 @@ export default function StudentStatusPage() {
                 </Button>
               </div>
 
-              {/* Student Grid */}
+              {/* --- UPDATED: Student Grid --- */}
               <div className="max-h-96 overflow-y-auto border rounded-lg">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Select</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Roll No.</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Full Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Current Enrollment</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Current Status</th>
                     </tr>
                   </thead>
@@ -325,8 +379,21 @@ export default function StudentStatusPage() {
                             className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{student.rollNumber}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{student.fullname}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex items-center gap-3">
+                            <StudentAvatar src={student.photo_path} alt={student.fullname} supabase={supabase} />
+                            <div>
+                              <div className="font-medium">{student.fullname}</div>
+                              <div className="text-xs text-muted-foreground">Roll: {student.rollNumber}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                           <div>
+                            <div className="font-medium">{student.academicYearName}</div>
+                            <div className="text-xs text-muted-foreground">{student.semesterName}</div>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <Badge variant={
                             student.promotion_status === 'Eligible' ? 'default' :
@@ -356,12 +423,12 @@ export default function StudentStatusPage() {
                   <Label className="font-semibold">Set New Status</Label>
                   <Dropdown
                     value={newStatus}
-                    options={promotionStatusOptions}
+                    options={promotionStatusOptions} // --- UPDATED ---
                     onChange={(e) => setNewStatus(e.value)}
                     optionLabel="label"
                     optionValue="value"
                     placeholder="Select new status..."
-                    className="w-full p-inputtext-sm"
+                    className="w-full" // --- FIXED: Removed problematic class ---
                   />
                 </div>
                 <Button 
@@ -396,12 +463,12 @@ const DropdownSelect: React.FC<{
     <Label className="font-semibold">{label}</Label>
     <Dropdown
       value={value}
-      options={options}
+      options={options.map(opt => ({ label: opt.name, value: opt.id }))}
       onChange={(e) => onChange(e.value)}
       optionLabel="name"
       optionValue="id"
       placeholder={placeholder}
-      className="w-full p-inputtext-sm"
+      className="w-full" // --- FIXED: Removed problematic class ---
       filter
       disabled={disabled}
     />

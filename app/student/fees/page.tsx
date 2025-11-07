@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
-import Link from "next/link" // Added for navigation
+import React, { useState, useEffect, useMemo, useCallback } from "react"
+import Link from "next/link"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { SupabaseClient } from "@supabase/supabase-js"
 import {
@@ -25,15 +25,6 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "@/components/ui/dialog"
-import {
   Table,
   TableBody,
   TableCell,
@@ -41,6 +32,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Command,
@@ -50,14 +48,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 // --- Icons ---
@@ -66,54 +56,44 @@ import {
   AlertTriangle,
   UserRound,
   Loader2,
-  X,
-  Filter,
   XCircle,
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
+  ArrowUpDown,
+  DollarSign,
+  Filter,
   ChevronsUpDown,
   Check,
-  ArrowUpDown,
-  DollarSign, // New icon
-  Receipt, // New icon
 } from "lucide-react"
+
+// --- PrimeReact Components ---
+import { Dropdown } from 'primereact/dropdown';
 
 // --- Type Definitions ---
 
-// For the main list (based on student_semesters)
+// --- UPDATED: For the main list (based on student_semesters) ---
 interface StudentEnrollment {
-  enrollment_id: string; // student_semesters.id
-  student_id: string;    // students.id
+  enrollment_id: string;      // student_semesters.id
+  student_id: string;         // students.id
+  academic_year_id: string; // student_academic_years.id
   fullname: string | null;
-  email: string | null;
-  roll_number: string;
-  status: string;
+  email: string | null; // --- FIXED: Added email ---
+  roll_number: string | null;
   photo_path: string | null;
   course_name: string;
+  academic_year_name: string;
+  academic_year_session: string;
   semester_name: string;
-  course_id: string;
-  semester_id: string;
-  academic_year: string; // --- NEW: For yearly fee link ---
-}
-
-// For a payment record
-interface Payment {
-  id: string;
-  created_at: string;
-  amount: number;
-  payment_method: string;
-  fees_type: string | null;
-  notes: string | null;
-  bank_name: string | null;
-  cheque_number: string | null;
-  transaction_id: string | null;
+  status: string;             // from student_semesters
+  promotion_status: string;   // from student_semesters
 }
 
 // For filters
 interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
-interface Semester { id: string; name: string; course_id: string; }
+interface AcademicYear { id: string; name: string; course_id: string; } 
+interface Semester { id: string; name: string; academic_year_id: string; } 
 
 // For Combobox props
 interface SearchableSelectProps {
@@ -128,76 +108,20 @@ interface SearchableSelectProps {
 // 🚀 Reusable Helper Components 🚀
 // -------------------------------------------------------------------
 
-/**
- * Professional Searchable Select (Combobox)
- */
-const SearchableSelect: React.FC<SearchableSelectProps> = ({
-  options,
-  value,
-  onChange,
-  placeholder,
-  disabled = false,
-}) => {
-  const [open, setOpen] = useState(false)
-  const selectedLabel = options.find((option) => option.value === value)?.label
+// --- Helper Functions ---
+const sortByName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { numeric: true });
+
+// --- Avatar Component ---
+const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, className?: string }> = ({ src, alt, supabase, className = "h-10 w-10" }) => {
+  const publicUrl = useMemo(() => {
+    if (!src) return null;
+    return supabase.storage.from('student_documents').getPublicUrl(src).data.publicUrl;
+  }, [src, supabase]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between font-normal"
-          disabled={disabled}
-        >
-          {value ? (
-            <span className="truncate">{selectedLabel}</span>
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-        <Command>
-          <CommandInput placeholder="Search..." />
-          <CommandEmpty>No results found.</CommandEmpty>
-          <CommandList>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.label}
-                  onSelect={() => {
-                    onChange(option.value)
-                    setOpen(false)
-                  }}
-                >
-                  <Check
-                    className={`mr-2 h-4 w-4 ${
-                      value === option.value ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
-                  {option.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/**
- * Helper for Rounded Square Avatar
- */
-const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ src, alt }) => {
-  return (
-    <Avatar className="h-10 w-10 rounded-md">
+    <Avatar className={`${className} rounded-md`}>
       <AvatarImage 
-        src={src || undefined} 
+        src={publicUrl || undefined} 
         alt={alt || "Student Photo"} 
         className="rounded-md object-cover"
       />
@@ -208,6 +132,30 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ s
   )
 }
 
+// --- Helper Dropdown Component ---
+const DropdownSelect: React.FC<{
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  options: { id: string; name: string }[];
+  placeholder: string;
+  disabled?: boolean;
+}> = ({ label, value, onChange, options, placeholder, disabled = false }) => (
+  <div className="space-y-1">
+    <Label className="font-semibold">{label}</Label>
+    <Dropdown
+      value={value}
+      options={options.map(opt => ({ label: opt.name, value: opt.id }))}
+      onChange={(e) => onChange(e.value)}
+      placeholder={placeholder}
+      className="w-full"
+      filter
+      disabled={disabled}
+    />
+  </div>
+);
+
+
 // -------------------------------------------------------------------
 // 💰 Main Fees Management Page Component 💰
 // -------------------------------------------------------------------
@@ -216,96 +164,68 @@ export default function FeesManagementPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
-  const [enrollments, setEnrollments] = useState<StudentEnrollment[]>([])
+  const [students, setStudents] = useState<StudentEnrollment[]>([]) // UPDATED
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   
   // --- Table State ---
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState("")
+  const [globalFilter, setGlobalFilter] = useState("") // Global filter for the table
   const [sorting, setSorting] = useState<SortingState>([
     { id: "fullname", desc: false },
   ])
+  
+  // --- Search State ---
+  const [studentSearch, setStudentSearch] = useState("");
+  const [rollNumberSearch, setRollNumberSearch] = useState("");
 
-  // --- Modal State ---
-  const [isViewPaymentsModalOpen, setIsViewPaymentsModalOpen] = useState(false)
-  const [modalLoading, setModalLoading] = useState(false)
-  const [modalError, setModalError] = useState<string | null>(null)
-  
-  // --- Data State ---
-  const [selectedEnrollment, setSelectedEnrollment] = useState<StudentEnrollment | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<Payment[]>([])
-  
   // --- Filter States ---
   const [selectedStream, setSelectedStream] = useState<string | null>(null)
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string | null>(null); 
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
 
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
+  const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
   const [allSemesters, setAllSemesters] = useState<Semester[]>([])
   
   const [loadingFilters, setLoadingFilters] = useState(true)
 
   // --- Memoized Filter Options ---
-  const streamOptions = useMemo(() => {
-    return allStreams.map(s => ({ label: s.name, value: s.id }))
-  }, [allStreams])
-
+  const streamOptions = useMemo(() => 
+    allStreams.sort(sortByName), 
+    [allStreams]
+  );
+  
   const courseOptions = useMemo(() => {
     if (!selectedStream) return []
     return allCourses
       .filter(c => c.stream_id === selectedStream)
-      .map(c => ({ label: c.name, value: c.id }))
+      .sort(sortByName)
   }, [allCourses, selectedStream])
 
+  const academicYearOptions = useMemo(() => {
+    if (!selectedCourse) return [];
+    return allAcademicYears
+      .filter(ay => ay.course_id === selectedCourse)
+      .sort(sortByName);
+  }, [allAcademicYears, selectedCourse]);
+
   const semesterOptions = useMemo(() => {
-    if (!selectedCourse) return []
+    if (!selectedAcademicYear) return [];
     return allSemesters
-      .filter(s => s.course_id === selectedCourse)
-      .map(s => ({ label: s.name, value: s.id }))
-  }, [allSemesters, selectedCourse])
+      .filter(s => s.academic_year_id === selectedAcademicYear)
+      .sort(sortByName);
+  }, [allSemesters, selectedAcademicYear]);
 
 
-  // --- Data Fetching (Enrollments) ---
-  useEffect(() => {
-    fetchEnrollments()
-  }, []) // Empty dependency array means this runs once on mount
-  
-  // --- Data Fetching (Filters) ---
-  useEffect(() => {
-    const fetchAllConfig = async () => {
-      setLoadingFilters(true)
-      try {
-        const [streamData, courseData, semesterData] = await Promise.all([
-          supabase.from("streams").select("*"),
-          supabase.from("courses").select("*"),
-          supabase.from("semesters").select("*")
-        ])
-
-        if (streamData.data) setAllStreams(streamData.data as Stream[])
-        if (courseData.data) setAllCourses(courseData.data as Course[])
-        if (semesterData.data) setAllSemesters(semesterData.data as Semester[])
-
-        const errors = [streamData.error, courseData.error, semesterData.error].filter(Boolean)
-        if (errors.length > 0) {
-          throw new Error(errors.map(e => e.message).join(", "))
-        }
-
-      } catch (error: any) {
-        console.error("Error fetching filter config:", error)
-        setError("Failed to load filter configuration options.")
-      } finally {
-        setLoadingFilters(false)
-      }
-    }
-    fetchAllConfig()
-  }, []) // Empty dependency array means this runs once on mount
-
-
-  const fetchEnrollments = async () => {
-    setLoading(true)
-    setError(null)
+  // --- Data Fetching (Students) ---
+  const fetchStudents = useCallback(async (nameQuery: string, rollQuery: string) => {
+    setLoading(true);
+    setStatusMessage(null);
+    setError(null);
     
     try {
       let query = supabase
@@ -313,154 +233,229 @@ export default function FeesManagementPage() {
         .select(
           `
           id, 
-          roll_number,
           status,
-          student_id,
-          course_id,
-          semester_id,
-          academic_year, 
+          promotion_status,
+          student_academic_year_id,
           student:students (
             id,
             fullname,
             email,
-            photo_path
+            photo_path,
+            roll_number
           ),
-          course:courses ( name ),
-          semester:semesters ( name )
-          `,
+          semester:semesters ( name ),
+          academic_year:student_academic_years (
+            id,
+            academic_year_name,
+            academic_year_session,
+            course:courses ( name )
+          )
+          `
         )
-        // --- NEW YEARLY LOGIC ---
-        // Only fetch Sem 1, 3, 5, etc., to represent the entire year
-        // This assumes semester names are like "Semester 1", "Semester 2"
-        .filter("semester.name", "in", "('Semester 1', 'Semester 3', 'Semester 5', 'Semester 7')") 
-        .order("created_at", { ascending: false })
+        .eq('status', 'active') // Default to only active students
+        .order("created_at", { ascending: false });
+        // Removed limit to allow filters to work on all data
 
-      // Apply filters
-      if (selectedSemester) {
-        query = query.eq("semester_id", selectedSemester)
-      } else if (selectedCourse) {
-        query = query.eq("course_id", selectedCourse)
-      } else if (selectedStream) {
-        const courseIds = allCourses
-          .filter(c => c.stream_id === selectedStream)
-          .map(c => c.id)
-        
+      // --- NEW Filter Logic ---
+      let ayFilterIds: string[] | null = null;
+
+      // --- Filter by Stream (finds matching course_ids, then ay_ids) ---
+      if (selectedStream && !selectedCourse) { 
+        const { data: courseIdsData, error: cError } = await supabase
+          .from("courses")
+          .select("id")
+          .eq("stream_id", selectedStream);
+        if (cError) throw cError;
+        const courseIds = courseIdsData.map((c: { id: string }) => c.id);
+
         if (courseIds.length > 0) {
-          query = query.in("course_id", courseIds)
+          const { data: ayIds, error: ayError } = await supabase
+            .from("student_academic_years")
+            .select("id")
+            .in("course_id", courseIds);
+          if (ayError) throw ayError;
+          ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
         } else {
-          query = query.eq("course_id", "00000000-0000-0000-0000-000000000000")
+          ayFilterIds = [];
         }
       }
 
-      const { data, error } = await query
+      // --- Filter by Course (finds matching ay_ids) ---
+      if (selectedCourse) {
+        const { data: ayIds, error } = await supabase
+          .from("student_academic_years")
+          .select("id")
+          .eq("course_id", selectedCourse);
+        if (error) throw error;
+        ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
+      }
+      
+      // --- FIXED: Filter by Academic Year ---
+      if (selectedAcademicYear) {
+        // Find the *name* of the template year (e.g., "First Year")
+        const yearName = allAcademicYears.find(ay => ay.id === selectedAcademicYear)?.name;
+        if (yearName) {
+            const { data: ayIds, error } = await supabase
+              .from("student_academic_years")
+              .select("id")
+              .eq("academic_year_name", yearName);
+            if (error) throw error;
+            
+            const matchingIds = ayIds.map((ay: { id: string }) => ay.id);
+            
+            // If filters were already applied, find the intersection
+            if (ayFilterIds) {
+              ayFilterIds = ayFilterIds.filter(id => matchingIds.includes(id));
+            } else {
+              ayFilterIds = matchingIds;
+            }
+        } else {
+          ayFilterIds = []; // No year name found, so no results
+        }
+      }
 
-      if (error) throw error
+      // Apply the Academic Year ID filter (which is BIGINT)
+      if (ayFilterIds !== null) {
+        if (ayFilterIds.length === 0) {
+          query = query.eq("student_academic_year_id", 0); // Force no results (use a non-existent bigint ID)
+        } else {
+          query = query.in("student_academic_year_id", ayFilterIds);
+        }
+      }
+      
+      // --- Filter by Semester (direct UUID) ---
+      if (selectedSemester) {
+        query = query.eq("semester_id", selectedSemester);
+      }
+
+      // --- Add Search Queries ---
+      if (nameQuery) {
+        query = query.ilike('students.fullname', `%${nameQuery}%`);
+      }
+      if (rollQuery) {
+        query = query.ilike('students.roll_number', `%${rollQuery}%`);
+      }
+      // --- End of New Logic ---
+
+      const { data, error } = await query;
+      if (error) throw error;
       
       if (data) {
-        // Flatten the data for the table
-        const flattenedData: StudentEnrollment[] = data.map((item: any) => ({
-          enrollment_id: item.id,
-          student_id: item.student.id,
-          fullname: item.student.fullname,
-          email: item.student.email,
-          roll_number: item.roll_number,
-          status: item.status,
-          photo_path: item.student.photo_path,
-          course_name: item.course?.name || "N/A",
-          semester_name: item.semester?.name || "N/A",
-          course_id: item.course_id,
-          semester_id: item.semester_id,
-          academic_year: item.academic_year, // Store the academic year
-        }));
-        setEnrollments(flattenedData)
+        const flattenedData: StudentEnrollment[] = data.map((item: any) => {
+          // --- ADDED Safety Check ---
+          if (!item.student || !item.academic_year || !item.semester) return null; 
+          
+          return {
+            enrollment_id: item.id,
+            student_id: item.student.id,
+            academic_year_id: item.student_academic_year_id,
+            fullname: item.student.fullname,
+            email: item.student.email,
+            roll_number: item.student.roll_number,
+            photo_path: item.student.photo_path,
+            course_name: item.academic_year?.course?.name || "N/A",
+            academic_year_name: item.academic_year?.academic_year_name || "N/A",
+            academic_year_session: item.academic_year?.academic_year_session || "N/A",
+            semester_name: item.semester?.name || "N/A",
+            status: item.status,
+            promotion_status: item.promotion_status,
+          }
+        }).filter((s: StudentEnrollment | null): s is StudentEnrollment => s !== null); // Filter out any nulls
+
+        setStudents(flattenedData);
+        if (flattenedData.length === 0 && (nameQuery || rollQuery || selectedSemester)) {
+          setStatusMessage({ type: 'error', message: 'No students found matching your criteria.' });
+        }
       }
     } catch (err: any) {
-      console.error("Error fetching enrollments:", err)
-      setError(err.message || "An unknown error occurred while fetching enrollments.")
+      console.error("Error fetching students:", err)
+      setError(err.message || "An unknown error occurred while fetching students.")
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase, selectedStream, selectedCourse, selectedAcademicYear, selectedSemester, allAcademicYears]); // Re-run when filters change
   
-  // --- Filter Handlers ---
+  // --- Initial Config Fetch (Filters) ---
+  useEffect(() => {
+    const fetchAllConfig = async () => {
+      setLoadingFilters(true);
+      try {
+        const [streamData, courseData, ayData, semData] = await Promise.all([
+          supabase.from("streams").select("*"),
+          supabase.from("courses").select("*"),
+          supabase.from("academic_years").select("id, name, course_id"),
+          supabase.from("semesters").select("id, name, academic_year_id"),
+        ]);
+
+        if (streamData.data) setAllStreams(streamData.data as Stream[]);
+        if (courseData.data) setAllCourses(courseData.data as Course[]);
+        if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[]);
+        if (semData.data) setAllSemesters(semData.data as Semester[]);
+
+        const errors = [streamData.error, courseData.error, ayData.error, semData.error].filter(Boolean);
+        if (errors.length > 0) {
+          throw new Error(errors.map(e => (e as Error).message).join(", "));
+        }
+      } catch (error: any) {
+        console.error("Error fetching filter config:", error);
+        setError("Failed to load filter configuration options.");
+      } finally {
+        setLoadingFilters(false);
+      }
+    };
+    fetchAllConfig();
+  }, [supabase]);
+
+  // --- Initial data load ---
+  useEffect(() => {
+    if (!loadingFilters) { // Only run after filters are loaded
+        fetchStudents("", ""); // Load initial list (latest 20 active)
+    }
+  }, [fetchStudents, loadingFilters]); // Depends on filters being loaded
+
+  // --- FIXED: Add missing filter handlers ---
   const handleStreamChange = (value: string | null) => {
-    setSelectedStream(value)
-    setSelectedCourse(null)
-    setSelectedSemester(null)
-  }
+    setSelectedStream(value);
+    setSelectedCourse(null);
+    setSelectedAcademicYear(null);
+    setSelectedSemester(null);
+  };
 
   const handleCourseChange = (value: string | null) => {
-    setSelectedCourse(value)
-    setSelectedSemester(null)
-  }
+    setSelectedCourse(value);
+    setSelectedAcademicYear(null);
+    setSelectedSemester(null);
+  };
+
+  const handleAcademicYearChange = (value: string | null) => {
+    setSelectedAcademicYear(value);
+    setSelectedSemester(null);
+  };
 
   const handleSemesterChange = (value: string | null) => {
-    setSelectedSemester(value)
-  }
+    setSelectedSemester(value);
+  };
+  // --- End of fixed handlers ---
 
   const handleFilterSearch = () => {
-    fetchEnrollments()
+    fetchStudents(studentSearch, rollNumberSearch);
   }
   
   const handleFilterClear = () => {
-    setSelectedStream(null)
-    setSelectedCourse(null)
-    setSelectedSemester(null)
-    setGlobalFilter("")
-    setEnrollments([])
-    // Use a tiny timeout to ensure state updates before refetching
-    setTimeout(() => {
-      fetchEnrollments()
-    }, 0)
+    setSelectedStream(null);
+    setSelectedCourse(null);
+    setSelectedAcademicYear(null);
+    setSelectedSemester(null);
+    setStudentSearch("");
+    setRollNumberSearch("");
+    setGlobalFilter("");
+    
+    // Refetch the default list
+    fetchStudents("", "");
   }
 
-  // --- Modal Logic ---
-
-  // --- View Payments Modal (UPDATED) ---
-  const openViewPaymentsModal = async (enrollment: StudentEnrollment) => {
-    setSelectedEnrollment(enrollment)
-    setIsViewPaymentsModalOpen(true)
-    setModalLoading(true)
-    setModalError(null)
-    setPaymentHistory([])
-
-    try {
-      // --- NEW YEARLY LOGIC ---
-      // Fetch payments by student_id AND academic_year
-      const { data, error } = await supabase
-        .from("student_payments")
-        .select("*") // Fetch all new columns
-        .eq("student_id", enrollment.student_id)
-        .eq("academic_year", enrollment.academic_year)
-        .order("created_at", { ascending: false })
-      
-      if (error) throw error
-      
-      setPaymentHistory(data as Payment[])
-      
-    } catch (err: any) {
-      console.error("Error fetching payment history:", err)
-      setModalError(err.message || "Failed to load payment history.")
-    } finally {
-      setModalLoading(false)
-    }
-  }
-  
-  
   // --- Table Columns Definition ---
   const columns: ColumnDef<StudentEnrollment>[] = [
-    {
-      accessorKey: "photo_path",
-      header: "Photo",
-      cell: ({ row }) => {
-        const enrollment = row.original
-        let publicUrl = ""
-        if (enrollment.photo_path) {
-          publicUrl = supabase.storage.from('student_documents').getPublicUrl(enrollment.photo_path).data.publicUrl
-        }
-        return <StudentAvatar src={publicUrl} alt={enrollment.fullname} />
-      },
-    },
     {
       accessorKey: "fullname",
       header: ({ column }) => (
@@ -468,61 +463,76 @@ export default function FeesManagementPage() {
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Full Name
+          Student
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => <div className="font-medium">{row.getValue("fullname") || "N/A"}</div>,
+      cell: ({ row }) => {
+        const student = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <StudentAvatar src={student.photo_path} alt={student.fullname} supabase={supabase} />
+            <div>
+              <div className="font-medium">{student.fullname || "N/A"}</div>
+              {/* --- FIXED: Added email --- */}
+              <div className="text-xs text-muted-foreground">{student.email}</div>
+            </div>
+          </div>
+        )
+      },
     },
     {
       accessorKey: "roll_number",
       header: "Roll Number",
     },
     {
-      accessorKey: "course_name",
-      header: "Course",
-      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("course_name")}</div>,
+      accessorKey: "academic_year_name",
+      header: "Current Enrollment",
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium">{row.original.course_name}</div>
+          <div className="text-xs text-muted-foreground">{row.original.academic_year_name} ({row.original.semester_name})</div>
+          <div className="text-xs text-muted-foreground">{row.original.academic_year_session}</div>
+        </div>
+      ),
     },
     {
-      // --- UPDATED: This now represents the start of the year ---
-      accessorKey: "semester_name",
-      header: "Year (Starts With)",
-      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("semester_name")}</div>,
+      accessorKey: "promotion_status",
+      header: "Promotion Status",
+      cell: ({ row }) => (
+        <Badge 
+          variant={row.original.promotion_status === 'Eligible' ? 'default' : 'secondary'}
+          className="capitalize"
+        >
+          {row.original.promotion_status}
+        </Badge>
+      ),
     },
     {
-      accessorKey: "academic_year",
-      header: "Academic Year",
-      cell: ({ row }) => <Badge variant="outline">{row.original.academic_year}</Badge>,
+      accessorKey: "status",
+      header: "Enrollment Status",
+      cell: ({ row }) => (
+        <Badge 
+          variant={row.original.status === 'active' ? 'default' : 'destructive'}
+          className="capitalize"
+        >
+          {row.original.status}
+        </Badge>
+      ),
     },
     {
       id: "actions",
       cell: ({ row }) => {
-        const enrollment = row.original
+        const student = row.original
         return (
           <div className="text-right">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Fee Actions</DropdownMenuLabel>
-                {/* --- MODIFIED: Pass student_id and academic_year --- */}
-                <DropdownMenuItem asChild>
-                  <Link href={`/student/fees/add?student_id=${enrollment.student_id}&year=${enrollment.academic_year}`}>
-                    <DollarSign className="mr-2 h-4 w-4 text-green-500" />
-                    Add Payment
-                  </Link>
-                </DropdownMenuItem>
-                {/* --- END MODIFIED --- */}
-                <DropdownMenuItem onClick={() => openViewPaymentsModal(enrollment)}>
-                  <Receipt className="mr-2 h-4 w-4 text-blue-500" />
-                  View Payments
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button asChild size="sm">
+              {/* --- UPDATED: Only send student_id --- */}
+              <Link href={`/student/fees/add?student_id=${student.student_id}`}>
+                <DollarSign className="mr-2 h-4 w-4" />
+                Add / View Payments
+              </Link>
+            </Button>
           </div>
         )
       },
@@ -531,7 +541,7 @@ export default function FeesManagementPage() {
 
   // --- Table Instance ---
   const table = useReactTable({
-    data: enrollments,
+    data: students,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -557,7 +567,7 @@ export default function FeesManagementPage() {
             Fees Management
           </h1>
           <p className="text-lg text-muted-foreground">
-            Add and view payments for student enrollments by academic year.
+            Search or filter for students to add payments and view fee history.
           </p>
         </div>
       </div>
@@ -570,49 +580,79 @@ export default function FeesManagementPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      {statusMessage && (
+        <Alert variant={statusMessage.type === 'error' ? 'destructive' : 'default'} className={`mb-4 ${statusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{statusMessage.type === 'error' ? 'Error' : 'Success!'}</AlertTitle>
+          <AlertDescription>{statusMessage.message}</AlertDescription>
+        </Alert>
+      )}
 
       {/* 3. Data Table Card */}
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Manage Student Payments</CardTitle>
-          {/* Filter Bar */}
+          <CardTitle>Find Student</CardTitle>
+          {/* --- UPDATED: Filters + Search --- */}
           <div className="py-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <SearchableSelect
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* --- FIXED: Added onChange handlers --- */}
+              <DropdownSelect
+                label="Filter by Stream"
                 options={streamOptions}
                 value={selectedStream}
                 onChange={handleStreamChange}
-                placeholder="Filter by Stream..."
+                placeholder="All Streams..."
                 disabled={loadingFilters}
               />
-              <SearchableSelect
+              <DropdownSelect
+                label="Filter by Course"
                 options={courseOptions}
                 value={selectedCourse}
                 onChange={handleCourseChange}
-                placeholder="Filter by Course..."
+                placeholder="All Courses..."
                 disabled={loadingFilters || !selectedStream}
               />
-              <SearchableSelect
+              <DropdownSelect
+                label="Filter by Year"
+                options={academicYearOptions}
+                value={selectedAcademicYear}
+                onChange={handleAcademicYearChange}
+                placeholder="All Years..."
+                disabled={loadingFilters || !selectedCourse}
+              />
+              <DropdownSelect
+                label="Filter by Semester"
                 options={semesterOptions}
                 value={selectedSemester}
                 onChange={handleSemesterChange}
-                placeholder="Filter by Starting Semester..."
-                disabled={loadingFilters || !selectedCourse}
+                placeholder="All Semesters..."
+                disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
-            <div className="flex flex-col md:flex-row gap-2 justify-between">
-              {/* Global Search Input */}
+            <div className="flex flex-col md:flex-row gap-4 justify-between pt-2">
               <div className="relative w-full md:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="name-search">Search by Name</Label>
                 <Input
+                  id="name-search"
                   type="search"
-                  placeholder="Search name, email, roll..."
-                  className="pl-9 w-full"
-                  value={globalFilter}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
+                  placeholder="Search name..."
+                  className="w-full"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
                 />
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="relative w-full md:max-w-xs">
+                <Label htmlFor="roll-search">Search by Roll No.</Label>
+                <Input
+                  id="roll-search"
+                  type="search"
+                  placeholder="Search roll number..."
+                  className="w-full"
+                  value={rollNumberSearch}
+                  onChange={(e) => setRollNumberSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 justify-end items-end">
                 <Button variant="outline" onClick={handleFilterClear} disabled={loading}>
                   <XCircle className="h-4 w-4 mr-2" />
                   Clear
@@ -621,7 +661,7 @@ export default function FeesManagementPage() {
                   {loading ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <Filter className="h-4 w-4 mr-2" />
+                    <Search className="h-4 w-4 mr-2" />
                   )}
                   Search
                 </Button>
@@ -667,7 +707,7 @@ export default function FeesManagementPage() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={columns.length} className="h-24 text-center">
-                      {loading ? "Loading enrollments..." : "No results found."}
+                      {loading ? "Loading..." : "No students found. Please adjust your search or filters."}
                     </TableCell>
                   </TableRow>
                 )}
@@ -697,93 +737,6 @@ export default function FeesManagementPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* 5. VIEW PAYMENTS MODAL */}
-      <Dialog open={isViewPaymentsModalOpen} onOpenChange={setIsViewPaymentsModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Payment History</DialogTitle>
-            {selectedEnrollment && (
-              <DialogDescription>
-                Showing payment history for <span className="font-medium text-primary">{selectedEnrollment.fullname}</span>
-                <br/>
-                (Academic Year: {selectedEnrollment.academic_year})
-              </DialogDescription>
-            )}
-          </DialogHeader>
-          
-          <div className="py-4 max-h-[60vh] overflow-y-auto">
-            {modalLoading && (
-              <div className="flex items-center justify-center h-48">
-                <Loader2 className="h-8 w-8 animate-spin" />
-              </div>
-            )}
-            {modalError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{modalError}</AlertDescription>
-              </Alert>
-            )}
-            
-            {!modalLoading && paymentHistory.length === 0 && (
-              <p className="text-center text-muted-foreground italic">No payment records found for this student and academic year.</p>
-            )}
-            
-            {!modalLoading && paymentHistory.length > 0 && (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Fees Type</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paymentHistory.map(payment => (
-                      <TableRow key={payment.id}>
-                        <TableCell className="text-xs">
-                          {format(parseISO(payment.created_at), "dd MMM yyyy, h:mm a")}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          ₹{payment.amount.toLocaleString('en-IN')}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{payment.fees_type}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{payment.payment_method}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {payment.payment_method === 'Cheque' && `Bank: ${payment.bank_name}, Chq: ${payment.cheque_number}`}
-                          {payment.transaction_id && `ID: ${payment.transaction_id}`}
-                          {!payment.bank_name && !payment.transaction_id && (payment.notes || "N/A")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {/* --- NEW: Total Row --- */}
-                    <TableRow className="bg-muted hover:bg-muted">
-                        <TableCell colSpan={1} className="font-medium text-right">TOTAL PAID</TableCell>
-                        <TableCell colSpan={4} className="font-bold text-lg text-green-700">
-                           ₹{paymentHistory.reduce((acc, p) => acc + p.amount, 0).toLocaleString('en-IN')}
-                        </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -24,15 +24,19 @@ interface PaymentDetails {
   notes: string | null;
   created_at: string;
   receipt_no: number; // The sequential receipt number
+  student_academic_year_id: string; // The ID from student_academic_years
 }
 
+// --- UPDATED ---
 interface StudentDetails {
   id: string;
   fullname: string | null;
-  roll_number: string | null; // From student_semesters
+  roll_number: string | null; // From students
   course_name: string | null; // From courses
-  academic_year: string; // The year for this receipt
-  original_admission_fee: number; // Net Payable
+  academic_year: string; // The year session string, e.g. "2024-2025"
+  academic_year_name: string; // The year name, e.g. "First Year"
+  net_payable_fee: number; // From student_academic_years
+  scholarship_name: string | null; // --- NEW ---
 }
 
 // --- Helper function to convert number to words (Indian Rupee format) ---
@@ -125,26 +129,26 @@ function ReceiptPage() {
         const typedPaymentData = paymentData as PaymentDetails;
         setPayment(typedPaymentData);
 
-        const { student_id, academic_year } = typedPaymentData;
+        const { student_id, academic_year } = typedPaymentData; // academic_year is session string
 
-        // 2. Fetch Student Details and Total Paid Status in parallel
-        const [studentResult, allPaymentsResult] = await Promise.all([
-          // Fetch student info
+        // 2. Fetch Student/Year Details and Total Paid Status in parallel
+        const [studentAyResult, allPaymentsResult] = await Promise.all([
+          // --- UPDATED QUERY ---
+          // Fetch student info from student_academic_years
           supabase
-            .from("students")
+            .from("student_academic_years")
             .select(`
               id,
-              fullname,
-              original_admission_fee,
-              student_semesters (
-                roll_number,
-                course:courses ( name )
-              )
+              net_payable_fee,
+              academic_year_name,
+              scholarship_name, 
+              student:students ( fullname, roll_number ),
+              course:courses ( name )
             `)
-            .eq('id', student_id)
-            .eq('student_semesters.academic_year', academic_year)
-            .limit(1, { foreignTable: 'student_semesters' })
+            .eq('student_id', student_id)
+            .eq('academic_year_session', academic_year)
             .maybeSingle(),
+          // --- END UPDATED QUERY ---
 
           // Fetch all payments for this student/year to calculate balance
           supabase
@@ -155,17 +159,20 @@ function ReceiptPage() {
         ]);
 
         // 3. Process Student Data
-        if (studentResult.error) throw new Error(`Student Fetch Error: ${studentResult.error.message}`)
-        if (studentResult.data) {
-          const data = studentResult.data as any;
-          const enrollment = data.student_semesters[0];
+        if (studentAyResult.error) throw new Error(`Student/Year Fetch Error: ${studentAyResult.error.message}`)
+        if (studentAyResult.data) {
+          const data = studentAyResult.data as any;
+          
+          // --- UPDATED MAPPING ---
           setStudent({
-            id: data.id,
-            fullname: data.fullname,
-            original_admission_fee: data.original_admission_fee || 0,
-            academic_year: academic_year,
-            roll_number: enrollment?.roll_number || 'N/A',
-            course_name: enrollment?.course?.name || 'N/A',
+            id: student_id,
+            fullname: data.student?.fullname || 'N/A',
+            net_payable_fee: data.net_payable_fee || 0,
+            academic_year: academic_year, // The session string from the payment
+            academic_year_name: data.academic_year_name || 'N/A', // The name (e.g., "First Year")
+            roll_number: data.student?.roll_number || 'N/A', // --- FIXED ---
+            course_name: data.course?.name || 'N/A',
+            scholarship_name: data.scholarship_name || 'N/A', // --- ADDED ---
           })
         } else {
           throw new Error("Student enrollment not found for this academic year.")
@@ -183,8 +190,8 @@ function ReceiptPage() {
           }
         }
         
-        // Calculate balance based on Net Payable and total tuition paid
-        const netPayable = studentResult.data?.original_admission_fee || 0;
+        // --- UPDATED: Calculate balance based on Net Payable (from student_academic_years) ---
+        const netPayable = studentAyResult.data?.net_payable_fee || 0;
         setBalanceAmount(netPayable - totalTuitionPaid);
 
       } catch (err: any) {
@@ -205,7 +212,9 @@ function ReceiptPage() {
       // Add null check for initial render
       if (!payment) return null;
       
-      const receiptUrl = `${window.location.origin}/student/fees/receipt?id=${payment.id}`;
+      const receiptUrl = (typeof window !== 'undefined') 
+        ? `${window.location.origin}/student/fees/receipt?id=${payment.id}`
+        : `/student/fees/receipt?id=${payment.id}`;
       
       return `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(receiptUrl)}`;
   }, [payment]); // Only depends on payment
@@ -255,9 +264,17 @@ function ReceiptPage() {
               <span className="text-gray-500 text-xs">Branch / Course:</span>
               <strong className="block text-gray-800">{student.course_name}</strong>
             </div>
+            {/* --- NEWLY ADDED FIELD --- */}
             <div>
-              <span className="text-gray-500 text-xs">Year:</span>
-              <strong className="block text-gray-800">{student.academic_year}</strong>
+              <span className="text-gray-500 text-xs">Quota / Scholarship:</span>
+              <strong className="block text-gray-800">{student.scholarship_name || 'N/A'}</strong>
+            </div>
+            {/* --- END NEWLY ADDED FIELD --- */}
+            
+            {/* --- UPDATED: Spans 2 columns --- */}
+            <div className="col-span-2"> 
+              <span className="text-gray-500 text-xs">Year / Session:</span>
+              <strong className="block text-gray-800">{student.academic_year_name} ({student.academic_year})</strong>
             </div>
           </div>
         </div>

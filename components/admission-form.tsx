@@ -107,7 +107,10 @@ interface CustomField {
 interface FieldOption { label: string; type: string; }
 interface DocOption { name: string; description: string; }
 interface CourseOption { id: string; name: string; }
-interface SemesterOption { id: string; name: string; course_id: string; }
+// UPDATED Type Definitions for new schema
+interface AcademicYearOption { id: string; name: string; course_id: string; }
+interface SemesterOption { id: string; name: string; academic_year_id: string; }
+
 interface CategoryOption { name: string; description: string; }
 interface AdmissionTypeOption { name: string; }
 interface DropdownOption { label: string; value: string; }
@@ -119,53 +122,56 @@ interface FormData {
   formNo: string;
   registrationNo: string;
   meritNo: string;
-  academicYear: string; 
-  quotaSelection: string; 
-  discipline: string; 
-  branchPreferences: string; 
+  academicYear: string;  // This is the session year, e.g., "2025 - 2026"
+  quotaSelection: string;  
+  discipline: string;  
+  branchPreferences: string;  
   howDidYouKnow: string;
   howDidYouKnowOther: string;
 
-  // Section 1 - Course Enrollment (Existing/Kept logic)
-  admission_year: string; 
+  // Section 1 - Course Enrollment (UPDATED)
   course_id: string;
-  semester_id: string; 
+  academic_year_id: string; // NEW: Replaces admission_year text
+  semester_id: string;  
   admission_category: string;
-  admission_type: string; 
+  admission_type: string;  
 
   // Section 2 - Personal Information (Image 1)
-  firstName: string; 
+  firstName: string;  
   middleName: string;
   lastName: string;
- 
+  
   fatherName: string;
   fatherOccupation: string;
   fatherAnnualIncome: string;
+  fatherEmail: string; // NEW: Optional email
   motherName: string;
   motherOccupation: string;
   motherAnnualIncome: string;
+  motherEmail: string; // NEW: Optional email
+
   dateOfBirth: string;
-  gender: string; 
+  gender: string;  
   nationality: string;
   placeOfBirth: string;
-  domicileOfMaharashtra: string; 
-  phdHandicap: string; 
+  domicileOfMaharashtra: string;  
+  phdHandicap: string;  
   religion: string;
   caste: string;
   bloodGroup: string;
-  categoryType: string; 
+  categoryType: string;  
   aadharCardNumber: string;
   panNo: string;
- 
+  
   // Section 3 - Address (Image 1)
-  correspondenceAddress: string; 
+  correspondenceAddress: string;  
   correspondenceCity: string
   correspondencePinCode: string
   correspondencePost: string;
   correspondenceTaluka: string;
   correspondenceDistrict: string;
   correspondenceState: string;
- 
+  
   permanentAddress: string;
   permanentCity: string
   permanentPinCode: string
@@ -173,7 +179,7 @@ interface FormData {
   permanentTaluka: string;
   permanentDistrict: string;
   permanentState: string;
- 
+  
   studentMobileNo: string;
   fatherMobileNo: string;
   motherMobileNo: string;
@@ -185,13 +191,13 @@ interface FormData {
   ssc_board: string;
   ssc_aggPercent: string;
   ssc_seatNo: string;
- 
+  
   hsc_monthYear: string;
   hsc_institute: string;
   hsc_board: string;
   hsc_aggPercent: string;
   hsc_seatNo: string;
- 
+  
   diploma_monthYear: string;
   diploma_institute: string;
   diploma_board: string;
@@ -245,18 +251,21 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   const [successMessage, setSuccessMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null)
- 
+  
   // Photo State
   const [colorPhotograph, setColorPhotograph] = useState<File | null>(null);
 
-  // --- Dynamic Option States ---
+  // --- Dynamic Option States (UPDATED) ---
   const [availableCustomFields, setAvailableCustomFields] = useState<FieldOption[]>([])
   const [availableDocuments, setAvailableDocuments] = useState<DocOption[]>([])
   const [availableCourses, setAvailableCourses] = useState<CourseOption[]>([])
-  const [allSemesters, setAllSemesters] = useState<SemesterOption[]>([]) 
+  
+  // NEW State for cascading dropdowns
+  const [allAcademicYears, setAllAcademicYears] = useState<AcademicYearOption[]>([])
+  const [allSemesters, setAllSemesters] = useState<SemesterOption[]>([])  
+  
   const [availableCategories, setAvailableCategories] = useState<CategoryOption[]>([])
-  const [availableAdmissionTypes, setAvailableAdmissionTypes] = useState<AdmissionTypeOption[]>([]) 
-  const [admissionYears, setAdmissionYears] = useState<string[]>([])
+  const [availableAdmissionTypes, setAvailableAdmissionTypes] = useState<AdmissionTypeOption[]>([])  
   
   // --- UPDATED: Fee State ---
   const [loadingFees, setLoadingFees] = useState(false)
@@ -282,11 +291,11 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   const categoryTypeOptions: DropdownOption[] = [{ label: 'OPEN (A)', value: 'OPEN' }, { label: 'RESERVED (B)', value: 'RESERVED' }, { label: 'OBC/SC/ST/VJNT', value: 'OBC/SC/ST/VJNT' }];
   const quotaOptions: DropdownOption[] = [{ label: 'MINORITY QUOTA', value: 'MINORITY' }, { label: 'CAP SEATS', value: 'CAP' }, { label: 'INSTITUTE LEVEL SEATS', value: 'INSTITUTE' }];
   const sourceOptions: DropdownOption[] = [
-    { label: 'Banner (A)', value: 'Banner' }, { label: 'Counsellor (B)', value: 'Counsellor' }, 
+    { label: 'Banner (A)', value: 'Banner' }, { label: 'Counsellor (B)', value: 'Counsellor' },  
     { label: 'Friend (E)', value: 'Friend' }, { label: 'Social Media/Internet (F)', value: 'Social Media/Internet' },
     { label: 'Newspaper/Pamphlets (C/D)', value: 'Newspaper/Pamphlets' }, { label: 'Other (G)', value: 'Other' }
   ];
- 
+  
   const disciplineOptions: DropdownOption[] = [
     { label: 'B. Pharmacy', value: 'B. PHARMACY' },
     { label: 'D. Pharmacy', value: 'D. PHARMACY' },
@@ -294,7 +303,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     { label: 'D.D.D.D.', value: 'DDDD' },
     { label: 'B.Sc.', value: 'B.SC.' },
   ];
- 
+  
   // List of Engineering Branches for Multi-select
   const branchOptions: DropdownOption[] = [
     { label: 'Computer Engineering (CE)', value: 'CE' },
@@ -308,51 +317,53 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   ];
 
 
-  // --- Initial FormData (Comprehensive) ---
+  // --- Initial FormData (Comprehensive & UPDATED) ---
   const initialFormData: FormData = {
     // Top Section
     formNo: "",
     registrationNo: "",
     meritNo: "",
-    academicYear: `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`,
+    academicYear: `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`, // Session year
     quotaSelection: "",
     discipline: "",
-    branchPreferences: "", 
+    branchPreferences: "",  
     howDidYouKnow: "",
     howDidYouKnowOther: "",
 
-    // Section 1 - Academic Details (Existing/Kept logic)
-    admission_year: new Date().getFullYear().toString(),
+    // Section 1 - Academic Details (UPDATED)
     course_id: "",
-    semester_id: "", 
+    academic_year_id: "", // NEW
+    semester_id: "",  
     admission_category: "",
-    admission_type: "", 
-   
-    // Section 2 - Personal Information (Image 1)
+    admission_type: "",  
+    
+    // Section 2 - Personal Information (UPDATED)
     firstName: "",
     middleName: "",
     lastName: "",
     fatherName: "",
     fatherOccupation: "",
     fatherAnnualIncome: "",
+    fatherEmail: "", // NEW
     motherName: "",
     motherOccupation: "",
     motherAnnualIncome: "",
+    motherEmail: "", // NEW
     dateOfBirth: "",
-    gender: "", 
-    nationality: "INDIAN", 
+    gender: "",  
+    nationality: "INDIAN",  
     placeOfBirth: "",
-    domicileOfMaharashtra: "", 
-    phdHandicap: "", 
+    domicileOfMaharashtra: "",  
+    phdHandicap: "",  
     religion: "",
     caste: "",
     bloodGroup: "",
-    categoryType: "", 
+    categoryType: "",  
     aadharCardNumber: "",
     panNo: "",
-   
+    
     // Section 3 - Address (Image 1)
-    correspondenceAddress: "", 
+    correspondenceAddress: "",  
     correspondenceCity: "",
     correspondencePinCode: "",
     correspondencePost: "",
@@ -376,13 +387,13 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     ssc_board: "",
     ssc_aggPercent: "",
     ssc_seatNo: "",
-   
+    
     hsc_monthYear: "",
     hsc_institute: "",
     hsc_board: "",
     hsc_aggPercent: "",
     hsc_seatNo: "",
-   
+    
     diploma_monthYear: "",
     diploma_institute: "",
     diploma_board: "",
@@ -436,47 +447,43 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   const [customFields, setCustomFields] = useState<CustomField[]>([])
   const [documents, setDocuments] = useState<DocumentItem[]>([])
 
-  // --- Data Fetching & Hooks ---
+  // --- Data Fetching & Hooks (UPDATED) ---
   useEffect(() => {
     const currentYear = new Date().getFullYear();
-    setAdmissionYears([
-      `${currentYear + 1}`,
-      `${currentYear}`,
-      `${currentYear - 1}`,
-      `${currentYear - 2}`
-    ]);
-   
-    setFormData(prev => ({ 
-        ...prev, 
-        academicYear: `${currentYear} - ${currentYear + 1}`,
-        admission_year: `${currentYear}`
+    setFormData(prev => ({  
+        ...prev,  
+        academicYear: `${currentYear} - ${currentYear + 1}`
     }));
 
     const fetchFormConfig = async () => {
         try {
             const supabase = getSupabaseClient()
-           
-            const [customData, docData, courseData, categoryData, semesterData, admissionTypeData] = await Promise.all([
+            
+            // UPDATED: Fetch academic_years and semesters with new relations
+            const [customData, docData, courseData, categoryData, academicYearData, semesterData, admissionTypeData] = await Promise.all([
                 supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
                 supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
                 supabase.from("courses").select("id, name").order("name"),
                 supabase.from("form_config").select("data_jsonb").eq("data_name", "fee_categories").single(),
-                supabase.from("semesters").select("id, name, course_id"), 
-                supabase.from("form_config").select("data_jsonb").eq("data_name", "admission_types").single() 
+                supabase.from("academic_years").select("id, name, course_id"), // NEW
+                supabase.from("semesters").select("id, name, academic_year_id"), // UPDATED
+                supabase.from("form_config").select("data_jsonb").eq("data_name", "admission_types").single()  
             ]);
 
             if (customData.data) setAvailableCustomFields(customData.data.data_jsonb as FieldOption[]);
             if (docData.data) setAvailableDocuments(docData.data.data_jsonb as DocOption[]);
             if (courseData.data) setAvailableCourses(courseData.data as CourseOption[]);
             if (categoryData.data) setAvailableCategories(categoryData.data.data_jsonb as CategoryOption[]);
-            if (semesterData.data) setAllSemesters(semesterData.data as SemesterOption[]);
+            if (academicYearData.data) setAllAcademicYears(academicYearData.data as AcademicYearOption[]); // NEW
+            if (semesterData.data) setAllSemesters(semesterData.data as SemesterOption[]); // UPDATED
             if (admissionTypeData.data) setAvailableAdmissionTypes(admissionTypeData.data.data_jsonb as AdmissionTypeOption[]);
-           
+            
             if (customData.error) throw new Error("Failed to load custom fields");
             if (docData.error) throw new Error("Failed to load document options");
             if (courseData.error) throw new Error("Failed to load courses");
             if (categoryData.error) throw new Error("Failed to load fee categories");
-            if (semesterData.error) throw new Error("Failed to load semesters");
+            if (academicYearData.error) throw new Error("Failed to load academic years"); // NEW
+            if (semesterData.error) throw new Error("Failed to load semesters"); // UPDATED
             if (admissionTypeData.error) throw new Error("Failed to load admission types");
 
         } catch (error: any) {
@@ -487,27 +494,39 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     fetchFormConfig()
   }, [])
 
-  // --- Derived State: Available Semesters (Fixed logic) ---
-  const availableSemesters = useMemo(() => {
+  // --- NEW: Derived State for Cascading Dropdowns ---
+  
+  // 1. Filter Academic Years based on selected Course
+  const availableAcademicYears = useMemo(() => {
     if (!formData.course_id) return [];
-    return allSemesters
-      .filter(sem => sem.course_id === formData.course_id)
+    return allAcademicYears
+      .filter(ay => ay.course_id === formData.course_id)
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }, [formData.course_id, allSemesters]);
+  }, [formData.course_id, allAcademicYears]);
 
-  // --- Effect to auto-select semester (Kept logic) ---
+  // 2. Filter Semesters based on selected Academic Year
+  const availableSemesters = useMemo(() => {
+    if (!formData.academic_year_id) return [];
+    return allSemesters
+      .filter(sem => sem.academic_year_id === formData.academic_year_id)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [formData.academic_year_id, allSemesters]);
+
+
+  // --- NEW: Effect to reset dropdowns when parent changes ---
   useEffect(() => {
-    if (formData.course_id && availableSemesters.length > 0) {
-      const defaultSem = availableSemesters.find(s => s.name.toLowerCase() === "semester 1") || availableSemesters[0];
-      if (defaultSem && formData.semester_id !== defaultSem.id) {
-        setFormData(prev => ({ ...prev, semester_id: defaultSem.id }));
-      }
-    } else if (formData.semester_id && !formData.course_id) {
-        setFormData(prev => ({ ...prev, semester_id: "" }));
-    }
-  }, [formData.course_id, availableSemesters, formData.semester_id]); // Added formData.semester_id
+      // When course changes, reset academic year and semester
+      setFormData(prev => ({ ...prev, academic_year_id: "", semester_id: "" }));
+  }, [formData.course_id]);
+
+  useEffect(() => {
+      // When academic year changes, reset semester
+      setFormData(prev => ({ ...prev, semester_id: "" }));
+  }, [formData.academic_year_id]);
+
 
   // --- UPDATED: Effect to fetch fees and calculate scholarship ---
+  // (This logic remains the same, as it depends on course_id and admission_category)
   useEffect(() => {
     const fetchFees = async () => {
       // We need both a course and a category selected
@@ -517,7 +536,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
         setOpenFee(null);
         setScholarshipAmount(null);
         setErrorMessage("");
-       
+        
         try {
           const supabase = getSupabaseClient();
           
@@ -562,7 +581,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
           }
 
           setErrorMessage("");
-         
+          
         } catch (error: any) {
           console.error("Error fetching fees:", error);
           setErrorMessage("Failed to fetch admission fees. Please try again.");
@@ -571,7 +590,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
         }
       }
     };
-   
+    
     fetchFees();
   }, [formData.course_id, formData.admission_category]);
 
@@ -584,7 +603,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     );
     setFilteredCustomFieldSuggestions(_suggestions);
   };
- 
+  
   const searchDocumentSuggestions = (event: AutoCompleteCompleteEvent) => {
     let _suggestions: DocOption[] = [];
     _suggestions = availableDocuments.filter(option => 
@@ -592,7 +611,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     );
     setFilteredDocumentSuggestions(_suggestions);
   };
- 
+  
   // Branch Preference Search
   const searchBranchSuggestions = (event: AutoCompleteCompleteEvent) => {
     let _suggestions: DropdownOption[] = branchOptions.filter(option => 
@@ -606,7 +625,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
- 
+  
   const handleDropdownChange = (e: DropdownChangeEvent) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -652,7 +671,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   const handleRemoveCustomField = (id: string) => {
     setCustomFields((prev) => prev.filter((field) => field.id !== id))
   }
- 
+  
   const handleAddDocument = () => {
     if (typeof selectedDocument === 'object' && selectedDocument.name) {
       const cleanDocName = selectedDocument.name.trim()
@@ -694,283 +713,296 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
       setSelectedCustomField("") 
       setSelectedDocument("") 
       setSelectedBranches([]); // Reset branch selection
-      setPayableFee(null) // --- UPDATED ---
-      setOpenFee(null) // --- UPDATED ---
-      setScholarshipAmount(null) // --- UPDATED ---
+      setPayableFee(null)
+      setOpenFee(null)
+      setScholarshipAmount(null)
       setErrorMessage("")
       setSuccessMessage("")
   }
- 
-  // --- Form Submission (UPDATED for Scholarship) ---
- const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  setIsSubmitting(true)
-  setSuccessMessage("")
-  setErrorMessage("")
+  
+  // --- Form Submission (UPDATED for roll_number) ---
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    setSuccessMessage("")
+    setErrorMessage("")
 
-  // 1. Prepare Branch Preferences and validate
-  const branchPreferenceCodes = selectedBranches.map(b => b.value).join(', ');
-  const cleanedFormData = Object.fromEntries(
-      Object.entries(formData).map(([key, value]) => [key, (value as string).trim()])
-  ) as unknown as FormData;
+    // 1. Prepare Branch Preferences and validate
+    const branchPreferenceCodes = selectedBranches.map(b => b.value).join(', ');
+    const cleanedFormData = Object.fromEntries(
+        Object.entries(formData).map(([key, value]) => [key, (value as string).trim()])
+    ) as unknown as FormData;
 
-  // --- [Validation logic remains the same] ---
-  const requiredFields: (keyof FormData)[] = [
-      "firstName", "lastName", "email", "studentMobileNo", "dateOfBirth",
-      "fatherName", "fatherOccupation", "motherName", "motherOccupation",
-      "gender", "nationality", "domicileOfMaharashtra", "categoryType",  
-      "quotaSelection", "discipline", "course_id", "semester_id",
-      "correspondenceAddress", "permanentAddress",
-      "ssc_monthYear", "ssc_institute", "ssc_board", "ssc_aggPercent", "ssc_seatNo",
-  ];
+    // --- [Validation logic] ---
+    const requiredFields: (keyof FormData)[] = [
+        "firstName", "lastName", "email", "studentMobileNo", "dateOfBirth",
+        "fatherName", "fatherOccupation", "motherName", "motherOccupation",
+        "gender", "nationality", "domicileOfMaharashtra", "categoryType",  
+        "quotaSelection", "discipline", 
+        "course_id", "academic_year_id", "semester_id",
+        "correspondenceAddress", "permanentAddress",
+        "ssc_monthYear", "ssc_institute", "ssc_board", "ssc_aggPercent", "ssc_seatNo",
+    ];
 
-  if (!colorPhotograph) {
-      setErrorMessage("Please upload your recent color photograph.");
+    if (!colorPhotograph) {
+        setErrorMessage("Please upload your recent color photograph.");
+        setIsSubmitting(false);
+        return;
+    }
+    
+    for (const field of requiredFields) {
+        if (field === "branchPreferences" && !branchPreferenceCodes) {
+            setErrorMessage(`Validation Error: Engineering & Technology Branch Preferences is required.`);
+            setIsSubmitting(false);
+            return;
+        }
+
+        if (field !== "branchPreferences" && (!cleanedFormData[field] || (typeof cleanedFormData[field] === 'string' && !(cleanedFormData[field] as string).trim()) ) ) {
+            setErrorMessage(`Validation Error: The field "${field.replace(/([A-Z])/g, ' $1')}" is required.`);
+            setIsSubmitting(false);
+            return;  
+        }
+    }
+    
+    if (payableFee === null || openFee === null || scholarshipAmount === null) {
+        setErrorMessage("Validation Error: Admission fees could not be determined. Please re-select course and category.");
+        setIsSubmitting(false);
+        return;
+    }
+    
+    if (documents.some(doc => !doc.file)) {
+      setErrorMessage("Please upload a file for all added document types.");
       setIsSubmitting(false);
       return;
-  }
- 
-  for (const field of requiredFields) {
-      if (field === "branchPreferences" && !branchPreferenceCodes) {
-           setErrorMessage(`Validation Error: Engineering & Technology Branch Preferences is required.`);
-         setIsSubmitting(false);
-         return;
+    }
+    // --- [End of validation logic] ---
+
+
+    try {
+      const supabase = getSupabaseClient()
+      const studentIdentifier = cleanedFormData.aadharCardNumber.trim() || user.id;
+
+      // --- 1. Photo Upload ---
+      let photoPath = '';
+      if (colorPhotograph) {
+        const fileExt = colorPhotograph.name.split('.').pop();
+        const photoFileName = `photo-${Date.now()}.${fileExt}`;
+        const photoFilePath = `${user.id}/${studentIdentifier}/profile/${photoFileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('student_documents')
+          .upload(photoFilePath, colorPhotograph);
+          
+        if (uploadError) throw new Error(`Failed to upload photo: ${uploadError.message}`);
+        photoPath = uploadData.path;
       }
 
-      if (field !== "branchPreferences" && (!cleanedFormData[field] || (typeof cleanedFormData[field] === 'string' && !(cleanedFormData[field] as string).trim()) ) ) {
-          setErrorMessage(`Validation Error: The field "${field.replace(/([A-Z])/g, ' $1')}" is required.`);
-          setIsSubmitting(false);
-          return;  
+      // --- 2. Document Uploads ---
+      const uploadedDocumentsData: UploadedDocument[] = [];  
+
+      for (const doc of documents) {
+        if (!doc.file) continue;  
+        
+        const cleanDocName = doc.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const fileExt = doc.file.name.split('.').pop();
+        const uniqueFileName = `${cleanDocName}-${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${studentIdentifier}/documents/${uniqueFileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('student_documents')
+          .upload(filePath, doc.file);
+
+        if (uploadError) throw new Error(`Failed to upload ${doc.name}: ${uploadError.message}`);
+        
+        uploadedDocumentsData.push({
+          name: doc.name,
+          path: uploadData.path,  
+          fileName: doc.file.name,
+          fileType: doc.file.type,
+        });
       }
-  }
- 
-  // --- UPDATED: Check all fee states ---
-  if (payableFee === null || openFee === null || scholarshipAmount === null) {
-      setErrorMessage("Validation Error: Admission fees could not be determined. Please re-select course and category.");
-      setIsSubmitting(false);
-      return;
-  }
- 
-  if (documents.some(doc => !doc.file)) {
-    setErrorMessage("Please upload a file for all added document types.");
-    setIsSubmitting(false);
-    return;
-  }
-  // --- [End of validation logic] ---
-
-
-  try {
-    const supabase = getSupabaseClient()
-    const studentIdentifier = cleanedFormData.aadharCardNumber.trim() || user.id;
-
-    // --- 1. Photo Upload (Same as before) ---
-    let photoPath = '';
-    if (colorPhotograph) {
-      const fileExt = colorPhotograph.name.split('.').pop();
-      const photoFileName = `photo-${Date.now()}.${fileExt}`;
-      const photoFilePath = `${user.id}/${studentIdentifier}/profile/${photoFileName}`;
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('student_documents')
-        .upload(photoFilePath, colorPhotograph);
-       
-      if (uploadError) throw new Error(`Failed to upload photo: ${uploadError.message}`);
-      photoPath = uploadData.path;
-    }
-
-    // --- 2. Document Uploads (Same as before) ---
-    const uploadedDocumentsData: UploadedDocument[] = [];  
-
-    for (const doc of documents) {
-      if (!doc.file) continue;  
-     
-      const cleanDocName = doc.name.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileExt = doc.file.name.split('.').pop();
-      const uniqueFileName = `${cleanDocName}-${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${studentIdentifier}/documents/${uniqueFileName}`;
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('student_documents')
-        .upload(filePath, doc.file);
-
-      if (uploadError) throw new Error(`Failed to upload ${doc.name}: ${uploadError.message}`);
-     
-      uploadedDocumentsData.push({
-        name: doc.name,
-        path: uploadData.path,  
-        fileName: doc.file.name,
-        fileType: doc.file.type,
-      });
-    }
-   
-    // --- 3. Consolidate Academic Records (Same as before) ---
-    const academicRecords = {
-        ssc: {
-            monthYear: cleanedFormData.ssc_monthYear, institute: cleanedFormData.ssc_institute, board: cleanedFormData.ssc_board, aggPercent: cleanedFormData.ssc_aggPercent, seatNo: cleanedFormData.ssc_seatNo,
-            maths: { obtained: cleanedFormData.ssc_maths_obtained, outOf: cleanedFormData.ssc_maths_outOf },
-            science: { obtained: cleanedFormData.ssc_science_obtained, outOf: cleanedFormData.ssc_science_outOf },
-            aggregate: { obtained: cleanedFormData.ssc_aggMarks_obtained, outOf: cleanedFormData.ssc_aggMarks_outOf },
-        },
-        hsc: {
-            monthYear: cleanedFormData.hsc_monthYear, institute: cleanedFormData.hsc_institute, board: cleanedFormData.hsc_board, aggPercent: cleanedFormData.hsc_aggPercent, seatNo: cleanedFormData.hsc_seatNo,
-            physics: cleanedFormData.hsc_physics_obtained, maths: cleanedFormData.hsc_maths_obtained, bioChemVoc: cleanedFormData.hsc_bioChemVoc_obtained, pcbm: cleanedFormData.hsc_pcbm_obtained,
-            aggregate: { obtained: cleanedFormData.hsc_totalMarks_obtained, outOf: cleanedFormData.hsc_totalMarks_outOf },
-        },
-        diploma: {
-            monthYear: cleanedFormData.diploma_monthYear, institute: cleanedFormData.diploma_institute, board: cleanedFormData.diploma_board, aggPercent: cleanedFormData.diploma_aggPercent, seatNo: cleanedFormData.diploma_seatNo,
-        },
-        mht_cet: { seatNumber: cleanedFormData.mhtcet_seatNumber, phy: cleanedFormData.mhtcet_phy_obtained, chem: cleanedFormData.mhtcet_chem_obtained, maths: cleanedFormData.mhtcet_maths_obtained, bio: cleanedFormData.mhtcet_bio_obtained, pcmPercentile: cleanedFormData.mhtcet_pcm_percentile, pcbPercentile: cleanedFormData.mhtcet_pcb_percentile },
-        jee_main: { seatNumber: cleanedFormData.jee_main_seatNumber, phy: cleanedFormData.jee_main_phy_obtained, chem: cleanedFormData.jee_main_chem_obtained, maths: cleanedFormData.jee_main_maths_obtained, pcM: cleanedFormData.jee_main_pcM_obtained },
-        nata: { seatNo: cleanedFormData.nata_test_seatNo, marks: cleanedFormData.nata_marks_obtained, outOf: cleanedFormData.nata_marks_outOf, monthYear: cleanedFormData.nata_monthYear },
-        direct_second_year: { instituteNameCode: cleanedFormData.direct_second_year_instituteNameCode, technicalBoard: cleanedFormData.direct_second_year_technicalBoard, branchName: cleanedFormData.direct_second_year_branchName, aggregate: { obtained: cleanedFormData.direct_second_year_aggMarks_obtained, outOf: cleanedFormData.direct_second_year_aggMarks_outOf } },
-    };
-
-
-    // --- 4. NEW: Split Payload Construction ---
-   
-    // 4a. Payload for 'students' table (Permanent Info)
-    const studentInsertData = {
-      user_id: user.id,
-      firstname: cleanedFormData.firstName,
-      lastname: cleanedFormData.lastName,
-      middlename: cleanedFormData.middleName,
-      email: cleanedFormData.email,
-      phone: cleanedFormData.studentMobileNo, // primary phone
-      dateofbirth: cleanedFormData.dateOfBirth,
-
-      // Address (from correspondence)
-      address: cleanedFormData.correspondenceAddress,  
-      city: cleanedFormData.correspondenceCity,
-      state: cleanedFormData.correspondenceState,
-      zipcode: cleanedFormData.correspondencePinCode,
-
-      // --- UPDATED: Save all fee details ---
-      admission_year: cleanedFormData.admission_year,
-      admission_category: cleanedFormData.admission_category,
-      admission_type: cleanedFormData.admission_type,
-      original_admission_fee: payableFee, // This is the NET payable fee
-      original_total_fee: openFee, // This is the full "Open" fee
-      original_scholarship_name: formData.admission_category, // e.g., "EBC"
-      original_scholarship_amount: scholarshipAmount, // e.g., 40000
-
-      // Data and Documents
-      documents: uploadedDocumentsData, // JSONB
-      custom_data: customFields.reduce((acc, field) => { acc[field.label] = field.value.trim(); return acc; }, {} as Record<string, string>), // JSONB
-
-      // NEW FIELDS (matching SQL snake_case)
-      photo_path: photoPath,
-      quota_selection: cleanedFormData.quotaSelection,
-      discipline: cleanedFormData.discipline,
-      branch_preferences: branchPreferenceCodes,
-      how_did_you_know: cleanedFormData.howDidYouKnow,
-      form_no: cleanedFormData.formNo,
-      registration_no: cleanedFormData.registrationNo,
-      merit_no: cleanedFormData.meritNo,
-
-      // Personal Details
-      father_name: cleanedFormData.fatherName,
-      mother_name: cleanedFormData.motherName,
-      father_occupation: cleanedFormData.fatherOccupation,
-      mother_occupation: cleanedFormData.motherOccupation,
-      father_annual_income: cleanedFormData.fatherAnnualIncome,
-      mother_annual_income: cleanedFormData.motherAnnualIncome,
-      gender: cleanedFormData.gender,
-      nationality: cleanedFormData.nationality,
-      place_of_birth: cleanedFormData.placeOfBirth,
-      domicile_of_maharashtra: cleanedFormData.domicileOfMaharashtra,
-      phd_handicap: cleanedFormData.phdHandicap,
-      religion: cleanedFormData.religion,
-      caste: cleanedFormData.caste,
-      blood_group: cleanedFormData.bloodGroup,
-      category_type: cleanedFormData.categoryType,
-      aadhar_card_number: cleanedFormData.aadharCardNumber,
-      pan_no: cleanedFormData.panNo,
-      student_mobile_no: cleanedFormData.studentMobileNo,
-      father_mobile_no: cleanedFormData.fatherMobileNo,
-      mother_mobile_no: cleanedFormData.motherMobileNo,
-
-      // Address Details (JSONB strings)
-      correspondence_details: JSON.stringify({
-          post: cleanedFormData.correspondencePost,  
-          taluka: cleanedFormData.correspondenceTaluka,  
-          district: cleanedFormData.correspondenceDistrict,  
-          address_line: cleanedFormData.correspondenceAddress,
-      }),
-      permanent_details: JSON.stringify({
-          address_line: cleanedFormData.permanentAddress,  
-          city: cleanedFormData.permanentCity,  
-          pinCode: cleanedFormData.permanentPinCode,  
-          post: cleanedFormData.permanentPost,  
-          taluka: cleanedFormData.permanentTaluka,  
-          district: cleanedFormData.permanentDistrict,  
-          state: cleanedFormData.permanentState,
-      }),
-     
-      // Academic Records (JSONB string)
-      academic_records: JSON.stringify(academicRecords),
-    };
-
-    // 4b. Data for 'student_semesters' table (Semester-Specific Info)
-    const semesterInsertData = {
-      course_id: cleanedFormData.course_id,
-      semester_id: cleanedFormData.semester_id,
-      academic_year: cleanedFormData.academicYear, // Use the form's academic year
-      roll_number: cleanedFormData.ssc_seatNo, // Using SSC seat no as roll no, as in original code
       
-      // --- UPDATED: Save all fee details to the semester record too ---
-      fees_details: {
-          total_fee: openFee, // Full course fee
-          scholarship_name: formData.admission_category,
-          scholarship_amount: scholarshipAmount,
-          net_payable_fee: payableFee, // The amount they actually have to pay
-          paid: 0, // Assuming 0 is paid at time of admission form
-          due: payableFee, // The initial due amount is the net payable fee
-          category: cleanedFormData.admission_category
-      },
-      status: 'active',
-      promotion_status: 'Eligible'
-    };
+      // --- 3. Consolidate Academic Records ---
+      const academicRecords = {
+          ssc: {
+              monthYear: cleanedFormData.ssc_monthYear, institute: cleanedFormData.ssc_institute, board: cleanedFormData.ssc_board, aggPercent: cleanedFormData.ssc_aggPercent, seatNo: cleanedFormData.ssc_seatNo,
+              maths: { obtained: cleanedFormData.ssc_maths_obtained, outOf: cleanedFormData.ssc_maths_outOf },
+              science: { obtained: cleanedFormData.ssc_science_obtained, outOf: cleanedFormData.ssc_science_outOf },
+              aggregate: { obtained: cleanedFormData.ssc_aggMarks_obtained, outOf: cleanedFormData.ssc_aggMarks_outOf },
+          },
+          hsc: {
+              monthYear: cleanedFormData.hsc_monthYear, institute: cleanedFormData.hsc_institute, board: cleanedFormData.hsc_board, aggPercent: cleanedFormData.hsc_aggPercent, seatNo: cleanedFormData.hsc_seatNo,
+              physics: cleanedFormData.hsc_physics_obtained, maths: cleanedFormData.hsc_maths_obtained, bioChemVoc: cleanedFormData.hsc_bioChemVoc_obtained, pcbm: cleanedFormData.hsc_pcbm_obtained,
+              aggregate: { obtained: cleanedFormData.hsc_totalMarks_obtained, outOf: cleanedFormData.hsc_totalMarks_outOf },
+          },
+          diploma: {
+              monthYear: cleanedFormData.diploma_monthYear, institute: cleanedFormData.diploma_institute, board: cleanedFormData.diploma_board, aggPercent: cleanedFormData.diploma_aggPercent, seatNo: cleanedFormData.diploma_seatNo,
+          },
+          mht_cet: { seatNumber: cleanedFormData.mhtcet_seatNumber, phy: cleanedFormData.mhtcet_phy_obtained, chem: cleanedFormData.mhtcet_chem_obtained, maths: cleanedFormData.mhtcet_maths_obtained, bio: cleanedFormData.mhtcet_bio_obtained, pcmPercentile: cleanedFormData.mhtcet_pcm_percentile, pcbPercentile: cleanedFormData.mhtcet_pcb_percentile },
+          jee_main: { seatNumber: cleanedFormData.jee_main_seatNumber, phy: cleanedFormData.jee_main_phy_obtained, chem: cleanedFormData.jee_main_chem_obtained, maths: cleanedFormData.jee_main_maths_obtained, pcM: cleanedFormData.jee_main_pcM_obtained },
+          nata: { seatNo: cleanedFormData.nata_test_seatNo, marks: cleanedFormData.nata_marks_obtained, outOf: cleanedFormData.nata_marks_outOf, monthYear: cleanedFormData.nata_monthYear },
+          direct_second_year: { instituteNameCode: cleanedFormData.direct_second_year_instituteNameCode, technicalBoard: cleanedFormData.direct_second_year_technicalBoard, branchName: cleanedFormData.direct_second_year_branchName, aggregate: { obtained: cleanedFormData.direct_second_year_aggMarks_obtained, outOf: cleanedFormData.direct_second_year_aggMarks_outOf } },
+      };
 
-    // --- 5. NEW: Two-Step Insert ---
-   
-    // Step 1: Insert the student and get their new ID
-    const { data: newStudent, error: studentError } = await supabase
-      .from("students")
-      .insert(studentInsertData)
-      .select("id") // Select the 'id' of the newly created student
-      .single();
 
-    if (studentError) throw studentError;
-   
-    if (!newStudent || !newStudent.id) {
-        throw new Error("Failed to create student record or retrieve new student ID.");
+      // --- 4. NEW: 3-Step Payload Construction ---
+      
+      // 4a. Payload for 'students' table (Permanent Info)
+      const studentInsertData = {
+        user_id: user.id,
+        firstname: cleanedFormData.firstName,
+        lastname: cleanedFormData.lastName,
+        middlename: cleanedFormData.middleName,
+        email: cleanedFormData.email,
+        phone: cleanedFormData.studentMobileNo, // primary phone
+        dateofbirth: cleanedFormData.dateOfBirth,
+
+        // --- UPDATED: Add roll_number here ---
+        roll_number: cleanedFormData.formNo || cleanedFormData.ssc_seatNo,
+
+        // Address (from correspondence)
+        address: cleanedFormData.correspondenceAddress,  
+        city: cleanedFormData.correspondenceCity,
+        state: cleanedFormData.correspondenceState,
+        zipcode: cleanedFormData.correspondencePinCode,
+
+        admission_year: cleanedFormData.academicYear.split(' - ')[0],
+        admission_category: cleanedFormData.admission_category,
+        admission_type: cleanedFormData.admission_type,
+        
+        // Data and Documents
+        documents: uploadedDocumentsData, // JSONB
+        custom_data: customFields.reduce((acc, field) => { acc[field.label] = field.value.trim(); return acc; }, {} as Record<string, string>), // JSONB
+
+        // NEW FIELDS (matching SQL snake_case)
+        photo_path: photoPath,
+        quota_selection: cleanedFormData.quotaSelection,
+        discipline: cleanedFormData.discipline,
+        branch_preferences: branchPreferenceCodes,
+        how_did_you_know: cleanedFormData.howDidYouKnow,
+        form_no: cleanedFormData.formNo,
+        registration_no: cleanedFormData.registrationNo,
+        merit_no: cleanedFormData.meritNo,
+
+        // Personal Details
+        father_name: cleanedFormData.fatherName,
+        mother_name: cleanedFormData.motherName,
+        father_occupation: cleanedFormData.fatherOccupation,
+        mother_occupation: cleanedFormData.motherOccupation,
+        father_annual_income: cleanedFormData.fatherAnnualIncome,
+        mother_annual_income: cleanedFormData.motherAnnualIncome,
+        father_email: cleanedFormData.fatherEmail,
+        mother_email: cleanedFormData.motherEmail,
+        gender: cleanedFormData.gender,
+        nationality: cleanedFormData.nationality,
+        place_of_birth: cleanedFormData.placeOfBirth,
+        domicile_of_maharashtra: cleanedFormData.domicileOfMaharashtra,
+        phd_handicap: cleanedFormData.phdHandicap,
+        religion: cleanedFormData.religion,
+        caste: cleanedFormData.caste,
+        blood_group: cleanedFormData.bloodGroup,
+        category_type: cleanedFormData.categoryType,
+        aadhar_card_number: cleanedFormData.aadharCardNumber,
+        pan_no: cleanedFormData.panNo,
+        student_mobile_no: cleanedFormData.studentMobileNo,
+        father_mobile_no: cleanedFormData.fatherMobileNo,
+        mother_mobile_no: cleanedFormData.motherMobileNo,
+
+        // Address Details (JSONB strings)
+        correspondence_details: JSON.stringify({
+            post: cleanedFormData.correspondencePost,  
+            taluka: cleanedFormData.correspondenceTaluka,  
+            district: cleanedFormData.correspondenceDistrict,  
+            address_line: cleanedFormData.correspondenceAddress,
+        }),
+        permanent_details: JSON.stringify({
+            address_line: cleanedFormData.permanentAddress,  
+            city: cleanedFormData.permanentCity,  
+            pinCode: cleanedFormData.permanentPinCode,  
+            post: cleanedFormData.permanentPost,  
+            taluka: cleanedFormData.permanentTaluka,  
+            district: cleanedFormData.permanentDistrict,  
+            state: cleanedFormData.permanentState,
+        }),
+        
+        // Academic Records (JSONB string)
+        academic_records: JSON.stringify(academicRecords),
+      };
+
+      // --- 5. NEW: 3-Step Insert ---
+      
+      // Step 1: Insert the student and get their new ID
+      const { data: newStudent, error: studentError } = await supabase
+        .from("students")
+        .insert(studentInsertData)
+        .select("id") // Select the 'id' (bigint) of the newly created student
+        .single();
+
+      if (studentError) throw studentError;
+      
+      if (!newStudent || !newStudent.id) {
+          throw new Error("Failed to create student record or retrieve new student ID.");
+      }
+      
+      // 4b. Data for 'student_academic_years' table (NEW)
+      const selectedAcademicYear = allAcademicYears.find(ay => ay.id === cleanedFormData.academic_year_id);
+      const academicYearName = selectedAcademicYear ? selectedAcademicYear.name : 'Unknown';
+
+      const studentAcademicYearInsertData = {
+        student_id: newStudent.id,
+        course_id: cleanedFormData.course_id,
+        academic_year_name: academicYearName,
+        academic_year_session: cleanedFormData.academicYear,
+        total_fee: openFee,
+        scholarship_name: formData.admission_category,
+        scholarship_amount: scholarshipAmount,
+        net_payable_fee: payableFee,
+        status: 'Active'
+      };
+
+      // Step 2: Insert the student_academic_years record
+      const { data: newStudentAcademicYear, error: ayError } = await supabase
+          .from("student_academic_years")
+          .insert(studentAcademicYearInsertData)
+          .select("id")
+          .single();
+
+      if (ayError) throw ayError;
+      
+      if (!newStudentAcademicYear || !newStudentAcademicYear.id) {
+           throw new Error("Student created, but failed to create student academic year record.");
+      }
+
+      // 4c. Data for 'student_semesters' table (MODIFIED)
+      const semesterInsertData = {
+        semester_id: cleanedFormData.semester_id,
+        // --- UPDATED: roll_number is REMOVED from this table ---
+        status: 'active',
+        promotion_status: 'Eligible',
+        student_id: newStudent.id,
+        student_academic_year_id: newStudentAcademicYear.id
+      };
+
+      // Step 3: Use the new IDs to insert their first semester record
+      const { error: semesterError } = await supabase
+        .from("student_semesters")
+        .insert(semesterInsertData);
+
+      if (semesterError) {
+        throw new Error(`Student enrolled in year, but failed to enroll in semester: ${semesterError.message}`);
+      }
+
+      setSuccessMessage("Your enrollment application has been submitted successfully!")
+      resetForm()
+    } catch (error: any) {
+      console.error("Submission error:", error)
+      const displayMessage = (error.details || error.message || "Failed to submit form. Please check your inputs.")
+      setErrorMessage(displayMessage)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    // Step 2: Use the new student ID to insert their first semester record
-    const { error: semesterError } = await supabase
-      .from("student_semesters")
-      .insert({
-          ...semesterInsertData,
-          student_id: newStudent.id // Link to the student we just created
-      });
-
-    if (semesterError) {
-        // Note: In a real-world scenario, you might want to delete the
-        // student record created in Step 1 if this step fails (a "rollback").
-        // For now, we'll just report the error.
-        throw new Error(`Student created, but failed to enroll in semester: ${semesterError.message}`);
-    }
-
-    setSuccessMessage("Your enrollment application has been submitted successfully!")
-    resetForm()
-  } catch (error: any) {
-    console.error("Submission error:", error)
-    const displayMessage = (error.details || error.message || "Failed to submit form. Please check your inputs.")
-    setErrorMessage(displayMessage)
-  } finally {
-    setIsSubmitting(false)
   }
-}
+
   // Custom template for displaying AutoComplete options (Kept logic)
   const itemTemplate = (item: FieldOption | DocOption | DropdownOption, key: 'label' | 'name' | 'value') => {
       const text = (item as any)[key]
@@ -980,7 +1012,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
   const branchItemTemplate = (item: DropdownOption) => {
     return <div className="p-2 text-sm hover:bg-gray-100">{item.label}</div>;
   };
- 
+  
   const selectedBranchTemplate = (branch: DropdownOption) => {
     return (
         <span className="inline-flex items-center text-xs font-medium bg-blue-100 text-blue-800 rounded-full px-2.5 py-0.5 mr-1">
@@ -1002,12 +1034,12 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
 
         <CardContent className="p-4 md:p-6">
           <form onSubmit={handleSubmit} className="space-y-8">
-           
+            
             {/* --- TOP SECTION (Image 1 Header Fields) --- */}
             <section className="space-y-4 border-b pb-4 border-dashed border-gray-300">
                 <h3 className="text-xl font-bold text-gray-800">Application Status & Quota</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <InputGroup label="Form No." name="formNo" type="text" value={formData.formNo} onChange={handleChange} placeholder="e.g., KT2025/123" required />
+                    <InputGroup label="Form No. (Roll No.)" name="formNo" type="text" value={formData.formNo} onChange={handleChange} placeholder="e.g., KT2025/123" required subLabel="This will be used as the Roll Number." />
                     <InputGroup label="Registration No." name="registrationNo" type="text" value={formData.registrationNo} onChange={handleChange} placeholder="Registration Number" required />
                     <InputGroup label="Merit No." name="meritNo" type="text" value={formData.meritNo} onChange={handleChange} placeholder="Merit Rank" required />
                     <div className="space-y-1">
@@ -1025,7 +1057,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                       />
                     </div>
                 </div>
-               
+                
                 <h4 className="text-lg font-bold text-gray-700 mt-4">Discipline & Branch Preferences</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-1">
@@ -1033,7 +1065,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                         <Dropdown
                           name="discipline"
                           value={formData.discipline}
-                          options={disciplineOptions} 
+                          options={disciplineOptions}  
                           onChange={handleDropdownChange}
                           optionLabel="label"
                           optionValue="value"
@@ -1045,8 +1077,8 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     {/* Branch Preference Multi-select */}
                     <div className="md:col-span-2 space-y-1">
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Engineering & Technology Branch Preferences (1, 2, 3...) <span className="text-red-500">*</span></label>
-                        <AutoComplete 
-                            value={selectedBranches} 
+                        <AutoComplete  
+                            value={selectedBranches}  
                             suggestions={filteredBranchSuggestions}
                             completeMethod={searchBranchSuggestions}
                             multiple
@@ -1064,7 +1096,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                         <p className="text-xs text-gray-500 mt-1">Select course name in order of preference (Codes: CE | CO | EE | EC | ME | AI | DS | BS)</p>
                     </div>
                 </div>
-               
+                
                 <h4 className="text-lg font-bold text-gray-700 mt-4">Source of Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
@@ -1088,22 +1120,12 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
             </section>
 
 
-            {/* --- 1. Course Enrollment Details (Keep existing logic) --- */}
+            {/* --- 1. Course Enrollment Details (UPDATED) --- */}
             <section className="space-y-4">
               <FormSectionHeader step={1} title="Course Enrollment Details" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Admission Year <span className="text-red-500">*</span></label>
-                  <Dropdown
-                    name="admission_year"
-                    value={formData.admission_year}
-                    options={admissionYears}
-                    onChange={handleDropdownChange}
-                    placeholder="Select Year"
-                    required
-                    className="w-full p-inputtext-sm"
-                  />
-                </div>
+                
+                {/* 1. Select Course */}
                 <div className="space-y-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Select Course <span className="text-red-500">*</span></label>
                   <Dropdown
@@ -1112,7 +1134,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     options={availableCourses}
                     onChange={(e) => {
                       handleDropdownChange(e);
-                      setFormData(prev => ({...prev, semester_id: ""}));
+                      // Resets are handled by useEffect
                     }}
                     optionLabel="name"
                     optionValue="id"
@@ -1121,23 +1143,45 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     className="w-full p-inputtext-sm"
                   />
                 </div>
+                
+                {/* 2. Select Academic Year (NEW) */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Select Academic Year <span className="text-red-500">*</span></label>
+                  <Dropdown
+                    name="academic_year_id"
+                    value={formData.academic_year_id}
+                    options={availableAcademicYears} 
+                    onChange={(e) => {
+                        handleDropdownChange(e);
+                        // Resets are handled by useEffect
+                    }}
+                    optionLabel="name"
+                    optionValue="id"
+                    placeholder="Select Year"
+                    required
+                    disabled={!formData.course_id || availableAcademicYears.length === 0} 
+                    className="w-full p-inputtext-sm"
+                  />
+                </div>
+
+                {/* 3. Select Semester (UPDATED) */}
                 <div className="space-y-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Select Semester <span className="text-red-500">*</span></label>
                   <Dropdown
                     name="semester_id"
                     value={formData.semester_id}
-                    options={availableSemesters} 
+                    options={availableSemesters}  
                     onChange={handleDropdownChange}
                     optionLabel="name"
                     optionValue="id"
                     placeholder="Select Semester"
                     required
-                    disabled={!formData.course_id || availableSemesters.length === 0} 
+                    disabled={!formData.academic_year_id || availableSemesters.length === 0}  
                     className="w-full p-inputtext-sm"
                   />
                 </div>
               </div>
-             
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Admission Category <span className="text-red-500">*</span></label>
@@ -1212,10 +1256,10 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
             </section>
             <hr className="my-6" />
 
-            {/* --- 2. Personal Information Section (Image 1 Full Fields) --- */}
+            {/* --- 2. Personal Information Section (UPDATED) --- */}
             <section className="space-y-4">
               <FormSectionHeader step={2} title="Personal & Family Information" />
-             
+              
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                   <div className="md:col-span-8 space-y-4">
                       <h4 className="text-lg font-bold text-gray-700">Name as appears on HSC/Diploma marksheet (IN CAPITALS) <span className="text-red-500">*</span></h4>
@@ -1230,13 +1274,19 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                           <InputGroup label="Father's Name" name="fatherName" type="text" value={formData.fatherName} onChange={handleChange} placeholder="Father's Full Name" required />
                           <InputGroup label="Father's Occupation" name="fatherOccupation" type="text" value={formData.fatherOccupation} onChange={handleChange} placeholder="Occupation" required />
                           <InputGroup label="Annual Income (Rs.)" name="fatherAnnualIncome" type="text" value={formData.fatherAnnualIncome} onChange={handleChange} placeholder="Annual Income" />
-                         
+                          
                           <InputGroup label="Mother's Name" name="motherName" type="text" value={formData.motherName} onChange={handleChange} placeholder="Mother's Full Name" required />
                           <InputGroup label="Mother's Occupation" name="motherOccupation" type="text" value={formData.motherOccupation} onChange={handleChange} placeholder="Occupation" required />
                           <InputGroup label="Annual Income (Rs.)" name="motherAnnualIncome" type="text" value={formData.motherAnnualIncome} onChange={handleChange} placeholder="Annual Income" />
                       </div>
+                      
+                      {/* NEW: Parent Emails */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <InputGroup label="Father's Email (Optional)" name="fatherEmail" type="email" value={formData.fatherEmail} onChange={handleChange} placeholder="father@example.com" />
+                        <InputGroup label="Mother's Email (Optional)" name="motherEmail" type="email" value={formData.motherEmail} onChange={handleChange} placeholder="mother@example.com" />
+                      </div>
                   </div>
-                 
+                  
                   {/* Photo Upload Area */}
                   <div className="md:col-span-4 flex flex-col items-center justify-start p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
                       <p className="text-sm font-semibold mb-2 text-center text-gray-700">Affix your recent Colour Photograph <span className="text-red-500">*</span></p>
@@ -1247,8 +1297,8 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                               <ImageIcon size={40} className="text-gray-400" />
                           )}
                           <label className="absolute bottom-0 w-full text-center bg-blue-500 text-white text-xs py-1 cursor-pointer hover:bg-blue-600">
-                            {colorPhotograph ? "Change Photo" : "Upload Photo"}
-                            <input type="file" onChange={handlePhotoUpload} className="hidden" accept="image/*" required />
+                              {colorPhotograph ? "Change Photo" : "Upload Photo"}
+                              <input type="file" onChange={handlePhotoUpload} className="hidden" accept="image/*" required />
                           </label>
                       </div>
                       <p className="text-xs text-gray-500">Student's Signature (Placeholder)</p>
@@ -1302,7 +1352,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                       className="w-full p-inputtext-sm"
                     />
                   </div>
-                 
+                  
                   <InputGroup label="Religion" name="religion" type="text" value={formData.religion} onChange={handleChange} placeholder="Religion" required />
                   <InputGroup label="Caste" name="caste" type="text" value={formData.caste} onChange={handleChange} placeholder="Caste" required />
                   <InputGroup label="Blood Group (Opt.)" name="bloodGroup" type="text" value={formData.bloodGroup} onChange={handleChange} placeholder="e.g., A+" />
@@ -1333,9 +1383,9 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
             {/* --- 3. Address Section (Image 1 Full Fields) --- */}
             <section className="space-y-4">
               <FormSectionHeader step={3} title="Address & Contact Details" />
-             
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               
+                
                 {/* Correspondence Address */}
                 <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
                     <h4 className="font-bold text-gray-700">Correspondence Address <span className="text-red-500">*</span></h4>
@@ -1364,7 +1414,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     </div>
                 </div>
               </div>
-             
+              
               <h4 className="text-lg font-bold text-gray-700 mt-6">Mobile Contacts</h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <InputGroup label="Student's Mobile No." name="studentMobileNo" type="tel" value={formData.studentMobileNo} onChange={handleChange} placeholder="Student's Mobile" required maxLength={10} />
@@ -1381,11 +1431,11 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <label className="block text-sm font-bold text-gray-700 mb-2">Select or Search Custom Field</label>
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <AutoComplete 
-                    value={selectedCustomField} 
-                    suggestions={filteredCustomFieldSuggestions} 
+                  <AutoComplete  
+                    value={selectedCustomField}  
+                    suggestions={filteredCustomFieldSuggestions}  
                     completeMethod={searchCustomFieldsSuggestions}
-                    onChange={(e) => setSelectedCustomField(e.value)} 
+                    onChange={(e) => setSelectedCustomField(e.value)}  
                     field="label"
                     placeholder="Search or select field label"
                     dropdown
@@ -1402,14 +1452,14 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {customFields.map((field) => (
                   <div key={field.id} className="relative group">
-                    <InputGroup 
-                      label={field.label} 
-                      name={field.id} 
-                      type="text" 
-                      value={field.value} 
+                    <InputGroup  
+                      label={field.label}  
+                      name={field.id}  
+                      type="text"  
+                      value={field.value}  
                       onChange={(e) => handleCustomFieldChange(field.id, e.target.value)}
-                      placeholder={`Enter value for ${field.label}`} 
-                      required 
+                      placeholder={`Enter value for ${field.label}`}  
+                      required  
                     />
                     <button
                       type="button"
@@ -1431,10 +1481,10 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                 <label className="block text-sm font-bold text-gray-700 mb-2">Select or Search Document Type</label>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <AutoComplete
-                    value={selectedDocument} 
-                    suggestions={filteredDocumentSuggestions} 
+                    value={selectedDocument}  
+                    suggestions={filteredDocumentSuggestions}  
                     completeMethod={searchDocumentSuggestions}
-                    onChange={(e) => setSelectedDocument(e.value)} 
+                    onChange={(e) => setSelectedDocument(e.value)}  
                     field="name"
                     placeholder="Search or select document type"
                     dropdown
@@ -1527,7 +1577,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
             {/* --- 6. Academic Information (Full Section from Image 2) --- */}
             <section className="space-y-6">
               <FormSectionHeader step={6} title="Academic Information" />
-             
+              
               <h4 className="text-lg font-bold text-gray-700 mt-4">Details of Institutions where you studied and passed</h4>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
@@ -1574,8 +1624,8 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
               </div>
 
               <h4 className="text-lg font-bold text-gray-700 mt-6">Details of Marks (Please write digits appropriately)</h4>
-             
-              <InputGroup label="Roll Number/Seat No. (for HSC/SSC details)" name="rollNumber" type="text" value={formData.ssc_seatNo} onChange={handleChange} placeholder="Roll/Seat Number" required />
+              
+              {/* <InputGroup label="Roll Number/Seat No. (for HSC/SSC details)" name="rollNumber" type="text" value={formData.ssc_seatNo} onChange={handleChange} placeholder="Roll/Seat Number" required /> */}
 
 
               {/* S.S.C. (Std. X) Marks */}
@@ -1585,7 +1635,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                   <span className="col-span-2 text-sm font-medium">Subject</span>
                   <span className="col-span-2 text-sm font-medium text-center">Marks Obtained <span className="text-red-500">*</span></span>
                   <span className="col-span-2 text-sm font-medium text-center">Out of <span className="text-red-500">*</span></span>
-                 
+                  
                   <span className="col-span-2 text-sm">Mathematics</span>
                   <input type="number" name="ssc_maths_obtained" value={formData.ssc_maths_obtained} onChange={handleChange} required placeholder="Obtained" className="col-span-2 p-2 border rounded-md text-sm text-center" />
                   <input type="number" name="ssc_maths_outOf" value={formData.ssc_maths_outOf} onChange={handleChange} required placeholder="Out of" className="col-span-2 p-2 border rounded-md text-sm text-center" />
@@ -1593,7 +1643,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                   <span className="col-span-2 text-sm">Science</span>
                   <input type="number" name="ssc_science_obtained" value={formData.ssc_science_obtained} onChange={handleChange} required placeholder="Obtained" className="col-span-2 p-2 border rounded-md text-sm text-center" />
                   <input type="number" name="ssc_science_outOf" value={formData.ssc_science_outOf} onChange={handleChange} required placeholder="Out of" className="col-span-2 p-2 border rounded-md text-sm text-center" />
-                 
+                  
                   <span className="col-span-2 text-sm font-bold">Aggregate Marks</span>
                   <input type="number" name="ssc_aggMarks_obtained" value={formData.ssc_aggMarks_obtained} onChange={handleChange} required placeholder="Obtained" className="col-span-2 p-2 border rounded-md text-sm text-center" />
                   <input type="number" name="ssc_aggMarks_outOf" value={formData.ssc_aggMarks_outOf} onChange={handleChange} required placeholder="Out of" className="col-span-2 p-2 border rounded-md text-sm text-center" />
@@ -1606,24 +1656,24 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <InputGroup label="Marks obtained in Physics (Out of 100)" name="hsc_physics_obtained" type="number" value={formData.hsc_physics_obtained} onChange={handleChange} placeholder="Obtained" required />
                   <InputGroup label="Marks obtained in Mathematics (Out of 100)" name="hsc_maths_obtained" type="number" value={formData.hsc_maths_obtained} onChange={handleChange} placeholder="Obtained" required />
-                  <InputGroup 
-                    label="Marks obtained in Chemistry/Biology/Technical/Vocational (Out of 100)" 
-                    name="hsc_bioChemVoc_obtained" 
-                    type="number" 
-                    value={formData.hsc_bioChemVoc_obtained} 
-                    onChange={handleChange} 
-                    placeholder="Obtained" 
-                    required 
+                  <InputGroup  
+                    label="Marks obtained in Chemistry/Biology/Technical/Vocational (Out of 100)"  
+                    name="hsc_bioChemVoc_obtained"  
+                    type="number"  
+                    value={formData.hsc_bioChemVoc_obtained}  
+                    onChange={handleChange}  
+                    placeholder="Obtained"  
+                    required  
                     className="md:col-span-2"
                   />
-                  <InputGroup 
-                    label="Marks obtained out of 300 P+M/C+B/Tech/Vocational" 
-                    name="hsc_pcbm_obtained" 
-                    type="number" 
-                    value={formData.hsc_pcbm_obtained} 
-                    onChange={handleChange} 
-                    placeholder="Total PCM/PCB" 
-                    required 
+                  <InputGroup  
+                    label="Marks obtained out of 300 P+M/C+B/Tech/Vocational"  
+                    name="hsc_pcbm_obtained"  
+                    type="number"  
+                    value={formData.hsc_pcbm_obtained}  
+                    onChange={handleChange}  
+                    placeholder="Total PCM/PCB"  
+                    required  
                     className="md:col-span-2"
                   />
                   <InputGroup label="Total Marks Obtained" name="hsc_totalMarks_obtained" type="number" value={formData.hsc_totalMarks_obtained} onChange={handleChange} placeholder="Total Obtained" required />
@@ -1667,7 +1717,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     <InputGroup label="Month & Year of Passing" name="nata_monthYear" type="text" value={formData.nata_monthYear} onChange={handleChange} placeholder="Month/Year" />
                 </div>
               </div>
-             
+              
               {/* Diploma / B.Sc. Marks (For Direct Second Year) */}
               <div className="p-4 border rounded-lg">
                 <p className="font-semibold mb-3">DIPLOMA / B.Sc. MARKS (To be filled by students seeking Direct Second Year to Engineering/Pharmacy/First Year Architecture)</p>

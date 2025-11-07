@@ -109,25 +109,29 @@ import {
 
 // --- UPDATED: For the main list, based on student_semesters ---
 interface StudentList {
-  enrollment_id: string; // student_semesters.id
-  student_id: string;    // students.id
+  enrollment_id: string;      // student_semesters.id
+  student_id: string;         // students.id
+  academic_year_id: string; // student_academic_years.id
   fullname: string | null;
   email: string | null;
   phone: string | null;
-  roll_number: string;
-  status: string;
-  created_at: string; // from student_semesters
+  roll_number: string;        // --- From students table ---
+  status: string;             // --- From student_semesters table ---
+  promotion_status: string;   // --- From student_semesters table ---
+  created_at: string;         // from student_semesters
   photo_path: string | null;
   course_name: string;
   semester_name: string;
+  academic_year_name: string;
+  academic_year_session: string;
 }
 
 // For the modal details & edit form
 interface StudentDetail {
+  // From students
   id: string // This is students.id
-  enrollment_id?: string // This is student_semesters.id
   user_id: string
-  created_at: string
+  created_at: string // from students
   firstname: string
   lastname: string
   email: string
@@ -174,15 +178,25 @@ interface StudentDetail {
   form_no: string | null
   registration_no: string | null
   merit_no: string | null
+  roll_number: string | null; // --- NEW: From students table ---
   
-  // Fields from student_semesters
-  "rollNumber": string // This maps to roll_number
-  status: string
+  // From student_semesters
+  enrollment_id: string // student_semesters.id
+  "rollNumber": string // This maps to students.roll_number
+  status: string // from student_semesters
   promotion_status: string
-  course_id: string | null
   semester_id: string | null
-  admission_fees: number | null
-  fees_details: any | null // from student_semesters
+  student_academic_year_id: string | null
+  
+  // From student_academic_years (nested for editing)
+  academic_year_data: {
+    id: string;
+    name: string;
+    course_id: string;
+    session: string;
+    total_fee: number | null;
+    net_payable_fee: number | null;
+  } | null;
   
   [key: string]: any // To allow for dynamic properties
 }
@@ -207,7 +221,8 @@ interface DocOption { name: string; description: string; }
 // For filters
 interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
-interface Semester { id: string; name: string; course_id: string; }
+interface AcademicYear { id: string; name: string; course_id: string; } 
+interface Semester { id: string; name: string; academic_year_id: string; } 
 
 // For Combobox props
 interface SearchableSelectProps {
@@ -448,7 +463,7 @@ const FormSelectGroup: React.FC<{
   label: string;
   name: string;
   value: string | null | undefined;
-  onValueChange: (value: string) => void; // <--- FIX WAS HERE
+  onValueChange: (value: string) => void;
   options: { label: string; value: string; }[];
   placeholder: string;
   required?: boolean;
@@ -535,12 +550,20 @@ const FormDatePickerGroup: React.FC<{
  * Helper for Rounded Square Avatar
  */
 const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ src, alt }) => {
+  // This is a duplicate definition, but we'll keep it for this file context
+  // In a real app, this would be in a shared file
+  const supabase = getSupabaseClient()
+  const publicUrl = useMemo(() => {
+    if (!src) return null;
+    return supabase.storage.from('student_documents').getPublicUrl(src).data.publicUrl;
+  }, [src, supabase]);
+
   return (
     <Avatar className="h-10 w-10 rounded-md">
       <AvatarImage 
-        src={src || undefined} 
+        src={publicUrl || undefined} 
         alt={alt || "Student Photo"} 
-        className="rounded-md object-cover" // Explicitly add object-cover
+        className="rounded-md object-cover"
       />
       <AvatarFallback className="rounded-md bg-muted">
         <UserRound className="h-5 w-5 text-muted-foreground" />
@@ -556,7 +579,7 @@ export default function StudentListPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
-  const [students, setStudents] = useState<StudentList[]>([]) // --- UPDATED: Uses new StudentList type
+  const [students, setStudents] = useState<StudentList[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -575,7 +598,6 @@ export default function StudentListPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   // --- Data State ---
-  // --- UPDATED: This state holds the MERGED data for the modal
   const [selectedStudent, setSelectedStudent] = useState<StudentDetail | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<StudentDetail>>({})
   const [editFormDateOfBirth, setEditFormDateOfBirth] = useState<Date | undefined>()
@@ -595,11 +617,13 @@ export default function StudentListPage() {
   // --- Filter States ---
   const [selectedStream, setSelectedStream] = useState<string | null>(null)
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string | null>(null); // --- NEW ---
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
 
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
-  const [allSemesters, setAllSemesters] = useState<Semester[]>([])
+  const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([]) // NEW
+  const [allSemesters, setAllSemesters] = useState<Semester[]>([]) // UPDATED
   
   const [loadingFilters, setLoadingFilters] = useState(true)
 
@@ -614,28 +638,54 @@ export default function StudentListPage() {
       .filter(c => c.stream_id === selectedStream)
       .map(c => ({ label: c.name, value: c.id }))
   }, [allCourses, selectedStream])
+
+  // --- NEW: Academic Year & Semester Filter Options ---
+  const academicYearOptions = useMemo(() => {
+    if (!selectedCourse) return [];
+    return allAcademicYears
+      .filter(ay => ay.course_id === selectedCourse)
+      .map(ay => ({ label: ay.name, value: ay.id }));
+  }, [allAcademicYears, selectedCourse]);
+
+  const semesterOptions = useMemo(() => {
+    if (!selectedAcademicYear) return [];
+    return allSemesters
+      .filter(s => s.academic_year_id === selectedAcademicYear)
+      .map(s => ({ label: s.name, value: s.id }));
+  }, [allSemesters, selectedAcademicYear]);
+
   
+  // --- Options for Edit Modal ---
   const allCourseOptions = useMemo(() => {
     return allCourses.map(c => ({ label: c.name, value: c.id }))
   }, [allCourses])
 
-  const semesterOptions = useMemo(() => {
-    if (!selectedCourse && !editFormData.course_id) return []
-    const courseId = editFormData.course_id || selectedCourse
-    return allSemesters
-      .filter(s => s.course_id === courseId)
-      .map(s => ({ label: s.name, value: s.id }))
-  }, [allSemesters, selectedCourse, editFormData.course_id])
-  
   const allSemesterOptions = useMemo(() => {
      return allSemesters.map(s => ({ label: s.name, value: s.id }))
   }, [allSemesters])
+  
+  // --- NEW: Memoized Options for Edit Modal Cascade ---
+  const editModalAcademicYearOptions = useMemo(() => {
+    const courseId = editFormData.academic_year_data?.course_id;
+    if (!courseId) return [];
+    return allAcademicYears
+      .filter(ay => ay.course_id === courseId)
+      .map(ay => ({ label: ay.name, value: ay.id }));
+  }, [allAcademicYears, editFormData.academic_year_data?.course_id]);
+
+  const editModalSemesterOptions = useMemo(() => {
+    const ayId = editFormData.student_academic_year_id;
+    if (!ayId) return [];
+    return allSemesters
+      .filter(s => s.academic_year_id === ayId)
+      .map(s => ({ label: s.name, value: s.id }));
+  }, [allSemesters, editFormData.student_academic_year_id]);
 
 
   // --- Data Fetching (Students) ---
   useEffect(() => {
     fetchStudents()
-  }, [])
+  }, []) // Load all active students on mount
   
   // --- Data Fetching (Form Config & Filters) ---
   useEffect(() => {
@@ -647,22 +697,25 @@ export default function StudentListPage() {
           docData, 
           streamData, 
           courseData, 
+          academicYearData, // NEW
           semesterData
         ] = await Promise.all([
           supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
           supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
           supabase.from("streams").select("*"),
           supabase.from("courses").select("*"),
-          supabase.from("semesters").select("*")
+          supabase.from("academic_years").select("id, name, course_id"), // NEW
+          supabase.from("semesters").select("id, name, academic_year_id") // UPDATED
         ])
 
         if (customData.data) setAvailableCustomFields(customData.data.data_jsonb as FieldOption[])
         if (docData.data) setAvailableDocuments(docData.data.data_jsonb as DocOption[])
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
-        if (semesterData.data) setAllSemesters(semesterData.data as Semester[])
+        if (academicYearData.data) setAllAcademicYears(academicYearData.data as AcademicYear[]) // NEW
+        if (semesterData.data) setAllSemesters(semesterData.data as Semester[]) // UPDATED
 
-        const errors = [customData.error, docData.error, streamData.error, courseData.error, semesterData.error].filter(Boolean)
+        const errors = [customData.error, docData.error, streamData.error, courseData.error, academicYearData.error, semesterData.error].filter(Boolean)
         if (errors.length > 0) {
           throw new Error(errors.map(e => e.message).join(", "))
         }
@@ -675,9 +728,9 @@ export default function StudentListPage() {
       }
     }
     fetchAllConfig()
-  }, [])
+  }, [supabase])
 
-  // --- UPDATED: Fetch from student_semesters and join students ---
+  // --- UPDATED: Fetch from student_semesters and join all related data ---
   const fetchStudents = async () => {
     setLoading(true)
     setError(null)
@@ -688,39 +741,81 @@ export default function StudentListPage() {
         .select(
           `
           id, 
-          roll_number,
           status,
+          promotion_status,
           created_at,
+          student_academic_year_id,
           student:students (
             id,
             fullname,
             email,
             phone,
-            photo_path
+            photo_path,
+            roll_number
           ),
-          course:courses ( name ),
-          semester:semesters ( name )
-          `,
+          semester:semesters ( name ),
+          academic_year:student_academic_years (
+            id,
+            academic_year_name,
+            academic_year_session,
+            course:courses ( name )
+          )
+          `
         )
+        .eq('status', 'active') // --- NEW: Only fetch ACTIVE students ---
         .order("created_at", { ascending: false })
 
-      // Apply filters (this logic now correctly filters student_semesters)
-      if (selectedSemester) {
-        query = query.eq("semester_id", selectedSemester)
-      } else if (selectedCourse) {
-        query = query.eq("course_id", selectedCourse)
+      // --- NEW Filter Logic ---
+      let ayFilterIds: string[] | null = null;
+
+      if (selectedCourse) {
+        // Find academic_year IDs for the selected course
+        const { data: ayIds, error } = await supabase
+          .from("student_academic_years")
+          .select("id")
+          .eq("course_id", selectedCourse);
+        if (error) throw error;
+        ayFilterIds = ayIds.map((ay: { id: any }) => ay.id);
       } else if (selectedStream) {
-        const courseIds = allCourses
-          .filter(c => c.stream_id === selectedStream)
-          .map(c => c.id)
-        
+        // Find course IDs for the selected stream
+        const { data: courseIdsData, error: cError } = await supabase
+          .from("courses")
+          .select("id")
+          .eq("stream_id", selectedStream);
+        if (cError) throw cError;
+        const courseIds = courseIdsData.map((c: { id: any }) => c.id);
+
         if (courseIds.length > 0) {
-          query = query.in("course_id", courseIds)
+          // Find academic_year IDs for those courses
+          const { data: ayIds, error: ayError } = await supabase
+            .from("student_academic_years")
+            .select("id")
+            .in("course_id", courseIds);
+          if (ayError) throw ayError;
+          ayFilterIds = ayIds.map((ay: { id: any }) => ay.id);
         } else {
-          // No courses in this stream, so return no results
-          query = query.eq("course_id", "00000000-0000-0000-0000-000000000000")
+          ayFilterIds = []; // No courses in stream, so no results
         }
       }
+
+      // Apply the Academic Year filter (from Stream/Course)
+      if (ayFilterIds !== null) {
+        if (ayFilterIds.length === 0) {
+          query = query.eq("student_academic_year_id", "00000000-0000-0000-0000-000000000000"); 
+        } else {
+          query = query.in("student_academic_year_id", ayFilterIds);
+        }
+      }
+      
+      // --- UPDATED: Apply new filters ---
+      if (selectedAcademicYear) {
+        query = query.eq("student_academic_year_id", selectedAcademicYear);
+      }
+
+      if (selectedSemester) {
+        query = query.eq("semester_id", selectedSemester)
+      }
+      // --- End of New Filter Logic ---
 
       const { data, error } = await query
 
@@ -731,15 +826,19 @@ export default function StudentListPage() {
         const flattenedData: StudentList[] = data.map((item: any) => ({
           enrollment_id: item.id,
           student_id: item.student.id,
+          academic_year_id: item.student_academic_year_id,
           fullname: item.student.fullname,
           email: item.student.email,
           phone: item.student.phone,
-          roll_number: item.roll_number,
+          roll_number: item.student.roll_number, // --- FIXED ---
           status: item.status,
+          promotion_status: item.promotion_status, // --- NEW ---
           created_at: item.created_at,
           photo_path: item.student.photo_path,
-          course_name: item.course?.name || "N/A",
+          course_name: item.academic_year?.course?.name || "N/A",
           semester_name: item.semester?.name || "N/A",
+          academic_year_name: item.academic_year?.academic_year_name || "N/A",
+          academic_year_session: item.academic_year?.academic_year_session || "N/A",
         }));
         setStudents(flattenedData)
       }
@@ -751,15 +850,23 @@ export default function StudentListPage() {
     }
   }
   
-  // --- Filter Handlers (Unchanged) ---
+  // --- Filter Handlers ---
   const handleStreamChange = (value: string | null) => {
     setSelectedStream(value)
     setSelectedCourse(null)
+    setSelectedAcademicYear(null) // --- NEW ---
     setSelectedSemester(null)
   }
 
   const handleCourseChange = (value: string | null) => {
     setSelectedCourse(value)
+    setSelectedAcademicYear(null) // --- NEW ---
+    setSelectedSemester(null)
+  }
+
+  // --- NEW ---
+  const handleAcademicYearChange = (value: string | null) => {
+    setSelectedAcademicYear(value)
     setSelectedSemester(null)
   }
 
@@ -774,18 +881,19 @@ export default function StudentListPage() {
   const handleFilterClear = () => {
     setSelectedStream(null)
     setSelectedCourse(null)
+    setSelectedAcademicYear(null) // --- NEW ---
     setSelectedSemester(null)
     setGlobalFilter("")
     setStudents([])
     setTimeout(() => {
-      fetchStudents()
+      fetchStudents() // This will fetch all active students
     }, 0)
   }
 
   // --- Modal Logic ---
 
-  // --- UPDATED: Fetches from *both* tables and merges ---
-  const openViewModal = async (studentId: string, enrollmentId: string) => {
+  // --- UPDATED: Fetches from all 3 tables and merges ---
+  const openViewModal = async (studentId: string, enrollmentId: string, academicYearId: string) => {
     setIsViewModalOpen(true)
     setModalLoading(true)
     setModalError(null)
@@ -803,18 +911,27 @@ export default function StudentListPage() {
       // Fetch specific enrollment data
       const { data: semesterData, error: semesterError } = await supabase
         .from("student_semesters")
-        .select("*")
+        .select("*") // This no longer has roll_number
         .eq("id", enrollmentId)
         .single()
       if (semesterError) throw semesterError;
+        
+      // Fetch academic year data
+      const { data: academicYearData, error: ayError } = await supabase
+        .from("student_academic_years")
+        .select("id, name:academic_year_name, course_id, session:academic_year_session, total_fee, net_payable_fee")
+        .eq("id", academicYearId)
+        .single()
+      if (ayError) throw ayError;
 
       // Merge them into one object for the modal
       const mergedData = {
         ...studentData,
         ...semesterData,
-        id: studentData.id, // Ensure student.id is the primary id
-        enrollment_id: semesterData.id, // Add enrollment_id
-        "rollNumber": semesterData.roll_number, // Map snake_case to camelCase for the form
+        id: studentData.id,
+        enrollment_id: semesterData.id,
+        "rollNumber": studentData.roll_number, // --- FIXED: Get from studentData ---
+        academic_year_data: academicYearData,
       } as StudentDetail;
       
       setSelectedStudent(mergedData)
@@ -827,8 +944,7 @@ export default function StudentListPage() {
     }
   }
 
-  // --- UPDATED: Renamed from openEditModal to setupEditModal ---
-  // This function just sets up the form state from an existing object
+  // --- This function just sets up the form state from an existing object ---
   const setupEditModal = (student: StudentDetail) => {
     setEditFormData(student)
     // Set date picker state
@@ -850,7 +966,7 @@ export default function StudentListPage() {
   }
 
   // --- UPDATED: New function to handle direct edit click from the list ---
-  const handleDirectEditClick = async (studentId: string, enrollmentId: string) => {
+  const handleDirectEditClick = async (studentId: string, enrollmentId: string, academicYearId: string) => {
     setIsEditModalOpen(true)
     setModalLoading(true)
     setModalError(null)
@@ -868,10 +984,18 @@ export default function StudentListPage() {
       // Fetch specific enrollment data
       const { data: semesterData, error: semesterError } = await supabase
         .from("student_semesters")
-        .select("*")
+        .select("*") // This no longer has roll_number
         .eq("id", enrollmentId)
         .single()
       if (semesterError) throw semesterError;
+
+      // Fetch academic year data
+      const { data: academicYearData, error: ayError } = await supabase
+        .from("student_academic_years")
+        .select("id, name:academic_year_name, course_id, session:academic_year_session, total_fee, net_payable_fee")
+        .eq("id", academicYearId)
+        .single()
+      if (ayError) throw ayError;
 
       // Merge them
       const mergedData = {
@@ -879,21 +1003,22 @@ export default function StudentListPage() {
         ...semesterData,
         id: studentData.id,
         enrollment_id: semesterData.id,
-        "rollNumber": semesterData.roll_number,
+        "rollNumber": studentData.roll_number, // --- FIXED: Get from studentData ---
+        academic_year_data: academicYearData,
       } as StudentDetail;
       
       // Use the setup function to populate the form
       setupEditModal(mergedData);
       
     } catch (err: any) {
-       console.error("Error fetching details for edit:", err)
-       setModalError(err.message || "Failed to load student details for editing.")
+        console.error("Error fetching details for edit:", err)
+        setModalError(err.message || "Failed to load student details for editing.")
     } finally {
-       setModalLoading(false)
+        setModalLoading(false)
     }
   }
 
-  // --- Edit Form Handlers (Unchanged) ---
+  // --- Edit Form Handlers ---
   const handleEditChange = (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -905,12 +1030,33 @@ export default function StudentListPage() {
      setEditFormData((prev) => ({ ...prev, [name]: value }))
   }
   
+  // --- UPDATED: Handles the new 3-level cascade ---
   const handleEditSearchableSelectChange = (name: string, value: string | null) => {
-     setEditFormData((prev) => ({ ...prev, [name]: value }))
-     // Reset semester if course changes
-     if (name === "course_id") {
-       setEditFormData((prev) => ({ ...prev, semester_id: null }))
-     }
+      if (name === "course_id") {
+        // Course changed: reset AY and Semester
+        setEditFormData(prev => ({
+          ...prev,
+          academic_year_data: {
+            ...(prev.academic_year_data || { id: "", name: "", course_id: "", session: "", total_fee: 0, net_payable_fee: 0 }),
+            course_id: value || ""
+          },
+          student_academic_year_id: null,
+          semester_id: null,
+        }));
+      } else if (name === "student_academic_year_id") {
+        // AY changed: reset Semester
+        setEditFormData(prev => ({
+          ...prev,
+          student_academic_year_id: value,
+          semester_id: null,
+        }));
+      } else {
+        // Semester or other changed
+        setEditFormData(prev => ({
+          ...prev,
+          [name]: value
+        }));
+      }
   }
 
   // --- Custom Field Handlers (Edit Mode) (Unchanged) ---
@@ -982,15 +1128,16 @@ export default function StudentListPage() {
   }
 
   // --- Form Submission ---
-  // --- UPDATED: Splits data and saves to *both* tables ---
+  // --- UPDATED: Splits data and saves to *three* tables ---
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     const studentId = editFormData.id;
-    const enrollmentId = (editFormData as any).enrollment_id; // Get the enrollment ID
+    const enrollmentId = (editFormData as any).enrollment_id;
+    const academicYearId = (editFormData as any).student_academic_year_id;
     
-    if (!studentId || !enrollmentId) {
-      setModalError("Error: Student or Enrollment ID is missing. Cannot save.");
+    if (!studentId || !enrollmentId || !academicYearId) {
+      setModalError("Error: Student, Enrollment, or Academic Year ID is missing. Cannot save.");
       return;
     }
 
@@ -1054,7 +1201,7 @@ export default function StudentListPage() {
         city: editFormData.city,
         state: editFormData.state,
         zipcode: editFormData.zipcode,
-        documents: finalDocumentsArray, // Updated documents
+        documents: finalDocumentsArray,
         custom_data: editFormData.custom_data,
         secondary_phone: editFormData.secondary_phone,
         family_phone: editFormData.family_phone,
@@ -1090,17 +1237,23 @@ export default function StudentListPage() {
         form_no: editFormData.form_no,
         registration_no: editFormData.registration_no,
         merit_no: editFormData.merit_no,
+        roll_number: editFormData["rollNumber"], // --- FIXED: Save roll_number to students table ---
       };
       
+      // Data for public.student_academic_years table
+      const academicYearUpdateData = {
+        course_id: editFormData.academic_year_data?.course_id,
+        // Add other AY fields here if you add them to the form
+        // e.g., total_fee: editFormData.academic_year_data?.total_fee
+      };
+
       // Data for public.student_semesters table
       const semesterUpdateData = {
-        roll_number: editFormData["rollNumber"], // Map from form
+        // --- FIXED: roll_number removed from this table ---
         status: editFormData.status,
         promotion_status: editFormData.promotion_status,
-        course_id: editFormData.course_id,
         semester_id: editFormData.semester_id,
-        admission_fees: editFormData.admission_fees,
-        // fees_details: editFormData.fees_details, // Uncomment if you add this to the form
+        student_academic_year_id: editFormData.student_academic_year_id,
       };
 
       // --- 3. Database Transactions ---
@@ -1112,6 +1265,14 @@ export default function StudentListPage() {
         .eq("id", studentId);
         
       if (studentUpdateError) throw new Error(`Student update failed: ${studentUpdateError.message}`);
+
+      // Update student_academic_years table
+      const { error: ayUpdateError } = await supabase
+        .from("student_academic_years")
+        .update(academicYearUpdateData)
+        .eq("id", academicYearId);
+
+      if (ayUpdateError) throw new Error(`Academic Year update failed: ${ayUpdateError.message}`);
 
       // Update student_semesters table
       const { error: semesterUpdateError } = await supabase
@@ -1142,11 +1303,7 @@ export default function StudentListPage() {
       header: "Photo",
       cell: ({ row }) => {
         const student = row.original
-        let publicUrl = ""
-        if (student.photo_path) {
-          publicUrl = supabase.storage.from('student_documents').getPublicUrl(student.photo_path).data.publicUrl
-        }
-        return <StudentAvatar src={publicUrl} alt={student.fullname} />
+        return <StudentAvatar src={student.photo_path} alt={student.fullname} />
       },
     },
     {
@@ -1163,22 +1320,42 @@ export default function StudentListPage() {
       cell: ({ row }) => <div className="font-medium">{row.getValue("fullname") || "N/A"}</div>,
     },
     {
-      accessorKey: "roll_number", // UPDATED
+      accessorKey: "roll_number", // --- FIXED: Now correctly read from student ---
       header: "Roll Number",
     },
     {
-      accessorKey: "course_name", // NEW
-      header: "Course",
-      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("course_name")}</div>,
+      accessorKey: "academic_year_name", // --- NEW: Current Year Column ---
+      header: "Current Year",
+      cell: ({ row }) => {
+        const student = row.original;
+        return (
+          <div>
+            <div className="font-medium">{student.academic_year_name}</div>
+            <div className="text-xs text-muted-foreground">{student.academic_year_session}</div>
+          </div>
+        )
+      },
     },
     {
-      accessorKey: "semester_name", // NEW
-      header: "Semester",
-      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("semester_name")}</div>,
+      accessorKey: "semester_name", // --- NEW: Current Semester Column ---
+      header: "Current Semester",
+      cell: ({ row }) => <div className="text-sm">{row.getValue("semester_name")}</div>,
     },
     {
-      accessorKey: "status",
-      header: "Status",
+      accessorKey: "promotion_status", // --- NEW: Promotion Status Column ---
+      header: "Promotion Status",
+      cell: ({ row }) => {
+        const status = row.getValue("promotion_status") as string;
+        return (
+          <Badge variant={status === 'Eligible' ? 'default' : 'secondary'} className="capitalize">
+            {status}
+          </Badge>
+        )
+      },
+    },
+    {
+      accessorKey: "status", // This is the semester status
+      header: "Enrollment Status",
       cell: ({ row }) => {
         const status = row.getValue("status") as string
         const variant = (
@@ -1197,7 +1374,7 @@ export default function StudentListPage() {
     {
       id: "actions",
       cell: ({ row }) => {
-        const student = row.original // This is a StudentList item
+        const student = row.original
         return (
           <div className="text-right">
             <DropdownMenu>
@@ -1209,13 +1386,11 @@ export default function StudentListPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                {/* --- UPDATED: Pass both IDs --- */}
-                <DropdownMenuItem onClick={() => openViewModal(student.student_id, student.enrollment_id)}>
+                <DropdownMenuItem onClick={() => openViewModal(student.student_id, student.enrollment_id, student.academic_year_id)}>
                   <Eye className="mr-2 h-4 w-4" />
                   View Details
                 </DropdownMenuItem>
-                {/* --- UPDATED: Pass both IDs --- */}
-                <DropdownMenuItem onClick={() => handleDirectEditClick(student.student_id, student.enrollment_id)}>
+                <DropdownMenuItem onClick={() => handleDirectEditClick(student.student_id, student.enrollment_id, student.academic_year_id)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Enrollment
                 </DropdownMenuItem>
@@ -1320,14 +1495,14 @@ export default function StudentListPage() {
               .filter(doc => !doc.fileType || !doc.fileType.startsWith("image/")) // Only show non-images here
               .map((doc) => (
                 <DocumentLinkItem key={doc.path} doc={doc} supabase={supabase} />
-            ))}
+              ))}
           </div>
         </section>
       )}
     </div>
   )
   
-  // --- UPDATED: This form now edits fields from both tables ---
+  // --- UPDATED: This form now edits fields from all three tables ---
   const renderEditForm = () => (
     <form onSubmit={handleEditSubmit}>
       <Tabs defaultValue="personal" className="w-full">
@@ -1356,7 +1531,7 @@ export default function StudentListPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormInputGroup label="Email Address" name="email" type="email" value={editFormData.email || ""} onChange={handleEditChange} required />
-                {/* --- UPDATED: This field is now from `student_semesters` --- */}
+                {/* --- UPDATED: This field is now from `students` --- */}
                 <FormInputGroup label="Roll Number" name="rollNumber" value={editFormData['rollNumber'] || ""} onChange={handleEditChange} required />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1401,45 +1576,52 @@ export default function StudentListPage() {
           </Card>
         </TabsContent>
         
-        {/* Admission & Address Tab */}
+        {/* --- UPDATED: Admission & Address Tab --- */}
         <TabsContent value="admission" className="space-y-6 pt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Admission Details</CardTitle>
+              <CardTitle>Enrollment Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* --- UPDATED: admission_year is on `students` table --- */}
-                <FormInputGroup label="Admission Year" name="admission_year" value={editFormData.admission_year || ""} onChange={handleEditChange} />
-                {/* --- UPDATED: admission_fees is on `student_semesters` table --- */}
-                <FormInputGroup label="Admission Fees" name="admission_fees" type="number" value={editFormData.admission_fees || ""} onChange={handleEditChange} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* --- UPDATED: course_id is on `student_semesters` table --- */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* --- NEW: 3-Level Cascade --- */}
                 <FormSearchableSelectGroup
                   label="Course"
-                  value={editFormData.course_id ?? null}
+                  value={editFormData.academic_year_data?.course_id ?? null}
                   onChange={(val) => handleEditSearchableSelectChange("course_id", val)}
                   options={allCourseOptions}
                   placeholder="Select course"
                   required
                 />
-                {/* --- UPDATED: semester_id is on `student_semesters` table --- */}
+                <FormSearchableSelectGroup
+                  label="Academic Year"
+                  value={editFormData.student_academic_year_id ?? null}
+                  onChange={(val) => handleEditSearchableSelectChange("student_academic_year_id", val)}
+                  options={editModalAcademicYearOptions}
+                  placeholder="Select academic year"
+                  disabled={!editFormData.academic_year_data?.course_id}
+                  required
+                />
                 <FormSearchableSelectGroup
                   label="Semester"
                   value={editFormData.semester_id ?? null}
                   onChange={(val) => handleEditSearchableSelectChange("semester_id", val)}
-                  options={semesterOptions} // This is already filtered based on editFormData.course_id
+                  options={editModalSemesterOptions} 
                   placeholder="Select semester"
-                  disabled={!editFormData.course_id}
+                  disabled={!editFormData.student_academic_year_id}
                   required
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* --- UPDATED: status is on `student_semesters` table --- */}
+                {/* --- Fields from `student_semesters` --- */}
                 <FormSelectGroup label="Enrollment Status" name="status" value={editFormData.status} onValueChange={(val: string) => handleEditSelectChange("status", val)} options={statusOptions} placeholder="Select status" required />
-                {/* --- UPDATED: promotion_status is on `student_semesters` table --- */}
                 <FormSelectGroup label="Promotion Status" name="promotion_status" value={editFormData.promotion_status} onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} options={promotionStatusOptions} placeholder="Select status" required />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 {/* --- Field from `students` --- */}
+                 <FormInputGroup label="Admission Year" name="admission_year" value={editFormData.admission_year || ""} onChange={handleEditChange} />
+                 {/* --- Field from `student_academic_years` (Read-only for now) --- */}
+                 <FormInputGroup label="Academic Year Session" name="session" value={editFormData.academic_year_data?.session || ""} onChange={() => {}} disabled />
               </div>
             </CardContent>
           </Card>
@@ -1529,16 +1711,16 @@ export default function StudentListPage() {
                 ))}
 
                 {filesToAdd.map((doc) => (
-                   <div key={doc.id} className="flex items-center justify-between p-2 bg-green-900/10 rounded-md border border-green-700/20">
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <Upload className="w-4 h-4 text-green-600 flex-shrink-0" />
-                      <span className="text-sm font-medium text-green-700 truncate">{doc.name}</span>
-                      <span className="text-xs text-muted-foreground truncate">({doc.file.name})</span>
+                    <div key={doc.id} className="flex items-center justify-between p-2 bg-green-900/10 rounded-md border border-green-700/20">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <Upload className="w-4 h-4 text-green-600 flex-shrink-0" />
+                        <span className="text-sm font-medium text-green-700 truncate">{doc.name}</span>
+                        <span className="text-xs text-muted-foreground truncate">({doc.file.name})</span>
+                      </div>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => cancelStagedFile(doc.id)} title="Cancel upload">
+                        <X className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => cancelStagedFile(doc.id)} title="Cancel upload">
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
                 ))}
               </div>
 
@@ -1684,9 +1866,9 @@ export default function StudentListPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Manage Student Enrollments</CardTitle>
-          {/* Filter Bar (Unchanged) */}
+          {/* Filter Bar (UPDATED) */}
           <div className="py-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <SearchableSelect
                 options={streamOptions}
                 value={selectedStream}
@@ -1702,11 +1884,18 @@ export default function StudentListPage() {
                 disabled={loadingFilters || !selectedStream}
               />
               <SearchableSelect
+                options={academicYearOptions}
+                value={selectedAcademicYear}
+                onChange={handleAcademicYearChange}
+                placeholder="Filter by Year..."
+                disabled={loadingFilters || !selectedCourse}
+              />
+              <SearchableSelect
                 options={semesterOptions}
                 value={selectedSemester}
                 onChange={handleSemesterChange}
                 placeholder="Filter by Semester..."
-                disabled={loadingFilters || !selectedCourse}
+                disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
             <div className="flex flex-col md:flex-row gap-2 justify-between">
@@ -1833,7 +2022,6 @@ export default function StudentListPage() {
           </div>
 
           <DialogFooter>
-            {/* --- UPDATED: Calls setupEditModal with the merged data --- */}
             <Button 
               variant="default" 
               onClick={() => selectedStudent && setupEditModal(selectedStudent)}
@@ -1860,7 +2048,6 @@ export default function StudentListPage() {
           </DialogHeader>
           
           <div className="flex-1 overflow-y-auto p-6 pt-0">
-            {/* --- UPDATED: Show loading spinner while fetching data for edit --- */}
             {modalLoading && (
               <div className="flex items-center justify-center h-96">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -1873,7 +2060,6 @@ export default function StudentListPage() {
                 <AlertDescription>{modalError}</AlertDescription>
               </Alert>
             )}
-            {/* Render the form only if not loading and form data is set */}
             {!modalLoading && editFormData.id && (
               renderEditForm()
             )}
