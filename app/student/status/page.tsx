@@ -1,4 +1,3 @@
-// e.g., app/dashboard/admin/status/page.tsx
 "use client"
 
 import React, { useState, useEffect, useMemo, useCallback } from "react"
@@ -30,12 +29,24 @@ interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
 interface Semester { id: string; name: string; course_id: string; }
 
+// --- UPDATED: Simplified Student interface ---
 interface Student { 
-    id: string; 
+    id: string; // This will be the student's ID
     fullname: string | null; 
-    "rollNumber": string; 
-    promotion_status: string; 
+    rollNumber: string; // This will come from student_semesters
+    promotion_status: string; // This will come from student_semesters
 }
+
+// --- NEW: Type for Supabase query result ---
+type StudentSemesterRow = {
+  roll_number: string;
+  promotion_status: string;
+  students: {
+    id: string;
+    fullname: string | null;
+  } | null; // The join might return null
+};
+
 
 // --- Status options for the action dropdown ---
 const promotionStatusOptions = [
@@ -73,23 +84,45 @@ export default function StudentStatusPage() {
   const courseOptions = useMemo(() => allCourses.filter(c => c.stream_id === selectedStream), [allCourses, selectedStream]);
   const semesterOptions = useMemo(() => allSemesters.filter(s => s.course_id === selectedCourse), [allSemesters, selectedCourse]);
 
-  // --- Data Fetching: Students ---
+  // --- Data Fetching: Students (UPDATED) ---
   const fetchStudents = useCallback(async () => {
-    if (!selectedSemester) {
+    if (!selectedSemester || !selectedCourse) {
       setStudents([]);
       return;
     }
     setLoading(true);
+    setStatusMessage(null);
     try {
+      // Query the join table 'student_semesters' and join 'students' table
       const { data, error } = await supabase
-        .from("students")
-        .select('id, fullname, "rollNumber", promotion_status')
+        .from("student_semesters")
+        .select(`
+          roll_number, 
+          promotion_status,
+          students (id, fullname)
+        `)
         .eq("semester_id", selectedSemester)
         .eq("course_id", selectedCourse)
-        .order("fullname");
+        .order("students(fullname)");
       
       if (error) throw error;
-      setStudents(data || []);
+
+      // Transform the nested data into the flat 'Student' interface
+      const formattedStudents = (data as StudentSemesterRow[]) // Use the defined type
+        .map((item: StudentSemesterRow) => { // --- FIX: Added explicit type for 'item' ---
+          // Ensure we have a student record before proceeding
+          if (!item.students) return null; 
+          return {
+            id: item.students.id, // The main student ID
+            fullname: item.students.fullname,
+            rollNumber: item.roll_number, // Map from snake_case
+            promotion_status: item.promotion_status
+          }
+        })
+        // --- FIX: Added explicit type for 'student' ---
+        .filter((student: Student | null): student is Student => student !== null); 
+      
+      setStudents(formattedStudents || []);
       setSelectedStudentIds([]); // Clear selection
     } catch (err: any) {
       setStatusMessage({ type: 'error', message: `Student Load Error: ${err.message}` });
@@ -124,11 +157,16 @@ export default function StudentStatusPage() {
 
   // Re-fetch students when filters change
   useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]);
+    // We must have both course and semester to fetch
+    if (selectedCourse && selectedSemester) {
+      fetchStudents();
+    } else {
+      setStudents([]); // Clear students if filters are incomplete
+    }
+  }, [fetchStudents, selectedCourse, selectedSemester]);
 
 
-  // --- Bulk Status Update Logic ---
+  // --- Bulk Status Update Logic (UPDATED) ---
   const handleBulkStatusUpdate = async () => {
     if (!newStatus) {
       setStatusMessage({ type: 'error', message: 'Please select a new status to apply.' });
@@ -138,15 +176,21 @@ export default function StudentStatusPage() {
       setStatusMessage({ type: 'error', message: 'Please select at least one student.' });
       return;
     }
+    if (!selectedSemester) {
+       setStatusMessage({ type: 'error', message: 'A semester must be selected.' });
+       return;
+    }
 
     setIsUpdating(true);
     setStatusMessage(null);
 
     try {
+      // Update the 'student_semesters' table, not the 'students' table
       const { error } = await supabase
-        .from("students")
+        .from("student_semesters")
         .update({ promotion_status: newStatus })
-        .in("id", selectedStudentIds);
+        .in("student_id", selectedStudentIds) // Match on the student ID
+        .eq("semester_id", selectedSemester); // And the specific semester
 
       if (error) throw error;
 
@@ -209,7 +253,7 @@ export default function StudentStatusPage() {
           <CardDescription>Manually update the promotion status for one or more students.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />}
+          {loading && !students.length && <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />}
 
           {/* --- Global Messages --- */}
           {statusMessage && (
@@ -264,7 +308,14 @@ export default function StudentStatusPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredStudents.map((student) => (
+                    {loading && (
+                      <tr>
+                        <td colSpan={4} className="text-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
+                        </td>
+                      </tr>
+                    )}
+                    {!loading && filteredStudents.map((student) => (
                       <tr key={student.id} className={selectedStudentIds.includes(student.id) ? 'bg-blue-50' : ''}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <input
@@ -289,7 +340,7 @@ export default function StudentStatusPage() {
                   </tbody>
                 </table>
               </div>
-              {filteredStudents.length === 0 && !loading && <p className="text-center py-4 text-gray-500">No students found matching your filters/search.</p>}
+              {!loading && filteredStudents.length === 0 && <p className="text-center py-4 text-gray-500">No students found matching your filters/search.</p>}
             </div>
           )}
           

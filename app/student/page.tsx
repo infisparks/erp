@@ -102,26 +102,30 @@ import {
   Check,
   CalendarIcon,
   ArrowUpDown,
-  Image as ImageIcon, // Added for new component
+  Image as ImageIcon,
 } from "lucide-react"
 
 // --- Type Definitions ---
 
-// For the main list
+// --- UPDATED: For the main list, based on student_semesters ---
 interface StudentList {
-  id: string
-  fullname: string | null
-  email: string
-  phone: string
-  "rollNumber": string
-  status: string
-  created_at: string
-  photo_path: string | null
+  enrollment_id: string; // student_semesters.id
+  student_id: string;    // students.id
+  fullname: string | null;
+  email: string | null;
+  phone: string | null;
+  roll_number: string;
+  status: string;
+  created_at: string; // from student_semesters
+  photo_path: string | null;
+  course_name: string;
+  semester_name: string;
 }
 
 // For the modal details & edit form
 interface StudentDetail {
-  id: string
+  id: string // This is students.id
+  enrollment_id?: string // This is student_semesters.id
   user_id: string
   created_at: string
   firstname: string
@@ -135,19 +139,13 @@ interface StudentDetail {
   zipcode: string
   documents: StudentDocument[] | null
   custom_data: Record<string, string> | null
-  status: string
-  "rollNumber": string
   secondary_phone: string | null
   family_phone: string | null
   middlename: string | null
   fullname: string | null
   admission_year: string | null
-  course_id: string | null
   admission_category: string | null
-  admission_fees: number | null
-  semester_id: string | null
   admission_type: string | null
-  promotion_status: string
   father_name: string | null
   mother_name: string | null
   father_occupation: string | null
@@ -176,8 +174,16 @@ interface StudentDetail {
   form_no: string | null
   registration_no: string | null
   merit_no: string | null
-  // Fields omitted for brevity in edit form (system managed):
-  // branch_history, correspondence_details, permanent_details, academic_records
+  
+  // Fields from student_semesters
+  "rollNumber": string // This maps to roll_number
+  status: string
+  promotion_status: string
+  course_id: string | null
+  semester_id: string | null
+  admission_fees: number | null
+  fees_details: any | null // from student_semesters
+  
   [key: string]: any // To allow for dynamic properties
 }
 
@@ -217,6 +223,9 @@ const statusOptions = [
   { label: 'Pending', value: 'pending' },
   { label: 'Approved', value: 'approved' },
   { label: 'Rejected', value: 'rejected' },
+  { label: 'Active', value: 'active' },
+  { label: 'Inactive', value: 'inactive' },
+  { label: 'Graduated', value: 'graduated' },
 ];
 
 const promotionStatusOptions = [
@@ -439,7 +448,7 @@ const FormSelectGroup: React.FC<{
   label: string;
   name: string;
   value: string | null | undefined;
-  onValueChange: (value: string) => void;
+  onValueChange: (value: string) => void; // <--- FIX WAS HERE
   options: { label: string; value: string; }[];
   placeholder: string;
   required?: boolean;
@@ -539,8 +548,6 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ s
     </Avatar>
   )
 }
-
-
 // -------------------------------------------------------------------
 // 🎓 Main Student List Page Component 🎓
 // -------------------------------------------------------------------
@@ -549,7 +556,7 @@ export default function StudentListPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
-  const [students, setStudents] = useState<StudentList[]>([])
+  const [students, setStudents] = useState<StudentList[]>([]) // --- UPDATED: Uses new StudentList type
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -568,6 +575,7 @@ export default function StudentListPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   // --- Data State ---
+  // --- UPDATED: This state holds the MERGED data for the modal
   const [selectedStudent, setSelectedStudent] = useState<StudentDetail | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<StudentDetail>>({})
   const [editFormDateOfBirth, setEditFormDateOfBirth] = useState<Date | undefined>()
@@ -669,20 +677,34 @@ export default function StudentListPage() {
     fetchAllConfig()
   }, [])
 
-
+  // --- UPDATED: Fetch from student_semesters and join students ---
   const fetchStudents = async () => {
     setLoading(true)
     setError(null)
     
     try {
       let query = supabase
-        .from("students")
+        .from("student_semesters")
         .select(
-          `id, fullname, email, phone, "rollNumber", status, created_at, photo_path`,
+          `
+          id, 
+          roll_number,
+          status,
+          created_at,
+          student:students (
+            id,
+            fullname,
+            email,
+            phone,
+            photo_path
+          ),
+          course:courses ( name ),
+          semester:semesters ( name )
+          `,
         )
         .order("created_at", { ascending: false })
 
-      // Apply filters
+      // Apply filters (this logic now correctly filters student_semesters)
       if (selectedSemester) {
         query = query.eq("semester_id", selectedSemester)
       } else if (selectedCourse) {
@@ -695,6 +717,7 @@ export default function StudentListPage() {
         if (courseIds.length > 0) {
           query = query.in("course_id", courseIds)
         } else {
+          // No courses in this stream, so return no results
           query = query.eq("course_id", "00000000-0000-0000-0000-000000000000")
         }
       }
@@ -702,9 +725,25 @@ export default function StudentListPage() {
       const { data, error } = await query
 
       if (error) throw error
-      if (data) setStudents(data as StudentList[])
-    } catch (err: any)
-    {
+      
+      if (data) {
+        // Flatten the data for the table
+        const flattenedData: StudentList[] = data.map((item: any) => ({
+          enrollment_id: item.id,
+          student_id: item.student.id,
+          fullname: item.student.fullname,
+          email: item.student.email,
+          phone: item.student.phone,
+          roll_number: item.roll_number,
+          status: item.status,
+          created_at: item.created_at,
+          photo_path: item.student.photo_path,
+          course_name: item.course?.name || "N/A",
+          semester_name: item.semester?.name || "N/A",
+        }));
+        setStudents(flattenedData)
+      }
+    } catch (err: any) {
       console.error("Error fetching students:", err)
       setError(err.message || "An unknown error occurred while fetching students.")
     } finally {
@@ -712,7 +751,7 @@ export default function StudentListPage() {
     }
   }
   
-  // --- Filter Handlers ---
+  // --- Filter Handlers (Unchanged) ---
   const handleStreamChange = (value: string | null) => {
     setSelectedStream(value)
     setSelectedCourse(null)
@@ -744,21 +783,41 @@ export default function StudentListPage() {
   }
 
   // --- Modal Logic ---
-  const openViewModal = async (studentId: string) => {
+
+  // --- UPDATED: Fetches from *both* tables and merges ---
+  const openViewModal = async (studentId: string, enrollmentId: string) => {
     setIsViewModalOpen(true)
     setModalLoading(true)
     setModalError(null)
     setSelectedStudent(null)
 
     try {
-      const { data, error } = await supabase
+      // Fetch permanent student data
+      const { data: studentData, error: studentError } = await supabase
         .from("students")
         .select("*")
         .eq("id", studentId)
         .single()
+      if (studentError) throw studentError;
 
-      if (error) throw error
-      if (data) setSelectedStudent(data as StudentDetail)
+      // Fetch specific enrollment data
+      const { data: semesterData, error: semesterError } = await supabase
+        .from("student_semesters")
+        .select("*")
+        .eq("id", enrollmentId)
+        .single()
+      if (semesterError) throw semesterError;
+
+      // Merge them into one object for the modal
+      const mergedData = {
+        ...studentData,
+        ...semesterData,
+        id: studentData.id, // Ensure student.id is the primary id
+        enrollment_id: semesterData.id, // Add enrollment_id
+        "rollNumber": semesterData.roll_number, // Map snake_case to camelCase for the form
+      } as StudentDetail;
+      
+      setSelectedStudent(mergedData)
       
     } catch (err: any) {
       console.error("Error fetching student details:", err)
@@ -768,7 +827,9 @@ export default function StudentListPage() {
     }
   }
 
-  const openEditModal = (student: StudentDetail) => {
+  // --- UPDATED: Renamed from openEditModal to setupEditModal ---
+  // This function just sets up the form state from an existing object
+  const setupEditModal = (student: StudentDetail) => {
     setEditFormData(student)
     // Set date picker state
     if (student.dateofbirth) {
@@ -788,7 +849,51 @@ export default function StudentListPage() {
     setIsEditModalOpen(true) // Open edit modal
   }
 
-  // --- Edit Form Handlers ---
+  // --- UPDATED: New function to handle direct edit click from the list ---
+  const handleDirectEditClick = async (studentId: string, enrollmentId: string) => {
+    setIsEditModalOpen(true)
+    setModalLoading(true)
+    setModalError(null)
+    setEditFormData({})
+    
+    try {
+      // Fetch permanent student data
+      const { data: studentData, error: studentError } = await supabase
+        .from("students")
+        .select("*")
+        .eq("id", studentId)
+        .single()
+      if (studentError) throw studentError;
+
+      // Fetch specific enrollment data
+      const { data: semesterData, error: semesterError } = await supabase
+        .from("student_semesters")
+        .select("*")
+        .eq("id", enrollmentId)
+        .single()
+      if (semesterError) throw semesterError;
+
+      // Merge them
+      const mergedData = {
+        ...studentData,
+        ...semesterData,
+        id: studentData.id,
+        enrollment_id: semesterData.id,
+        "rollNumber": semesterData.roll_number,
+      } as StudentDetail;
+      
+      // Use the setup function to populate the form
+      setupEditModal(mergedData);
+      
+    } catch (err: any) {
+       console.error("Error fetching details for edit:", err)
+       setModalError(err.message || "Failed to load student details for editing.")
+    } finally {
+       setModalLoading(false)
+    }
+  }
+
+  // --- Edit Form Handlers (Unchanged) ---
   const handleEditChange = (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -808,7 +913,7 @@ export default function StudentListPage() {
      }
   }
 
-  // --- Custom Field Handlers (Edit Mode) ---
+  // --- Custom Field Handlers (Edit Mode) (Unchanged) ---
   const handleCustomFieldChange = (key: string, value: string) => {
     setEditFormData(prev => ({
       ...prev,
@@ -841,7 +946,7 @@ export default function StudentListPage() {
      });
   }
 
-  // --- Document Management Handlers (Edit Mode) ---
+  // --- Document Management Handlers (Edit Mode) (Unchanged) ---
   const stageFileForUpload = () => {
     if (selectedDocument && newDocFile) {
       const docName = selectedDocument.name;
@@ -877,17 +982,26 @@ export default function StudentListPage() {
   }
 
   // --- Form Submission ---
+  // --- UPDATED: Splits data and saves to *both* tables ---
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editFormData.id) return
+    
+    const studentId = editFormData.id;
+    const enrollmentId = (editFormData as any).enrollment_id; // Get the enrollment ID
+    
+    if (!studentId || !enrollmentId) {
+      setModalError("Error: Student or Enrollment ID is missing. Cannot save.");
+      return;
+    }
 
     setIsSubmitting(true)
     setModalError(null)
     
-    const { id, user_id, "rollNumber": rollNumber } = editFormData
+    const { user_id, "rollNumber": rollNumber } = editFormData
     const bucketName = 'student_documents'
 
     try {
+      // --- 1. Document Management (Unchanged from original) ---
       if (filesToRemove.length > 0) {
         const pathsToRemove = filesToRemove.map(f => f.path)
         const { error: deleteError } = await supabase.storage
@@ -906,7 +1020,9 @@ export default function StudentListPage() {
           const fileExt = newDoc.file.name.split('.').pop();
           const cleanDocName = newDoc.name.replace(/[^a-zA-Z0-9]/g, '_');
           const uniqueFileName = `${cleanDocName}-${Date.now()}.${fileExt}`;
-          const filePath = `${user_id}/${rollNumber}/${uniqueFileName}`;
+          // Use the roll number from the form for the path
+          const studentRollNumber = editFormData['rollNumber'] || 'UNKNOWN_ROLL';
+          const filePath = `${user_id}/${studentRollNumber}/${uniqueFileName}`;
 
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from(bucketName)
@@ -925,44 +1041,90 @@ export default function StudentListPage() {
         }
       }
       
-      // Prepare data for update
-      const { 
-        id: formId, 
-        created_at, 
-        user_id: formUserId, 
-        fullname, 
-        documents,
-        ...restOfUpdateData 
-      } = editFormData
+      // --- 2. Data Splitting ---
       
-      const finalUpdateData = {
-        ...restOfUpdateData,
-        documents: finalDocumentsArray,
-        custom_data: editFormData.custom_data,
-        // Format date back to ISO string for Supabase
+      // Data for public.students table
+      const studentUpdateData = {
+        firstname: editFormData.firstname,
+        lastname: editFormData.lastname,
+        email: editFormData.email,
+        phone: editFormData.phone,
         dateofbirth: editFormDateOfBirth ? format(editFormDateOfBirth, "yyyy-MM-dd") : null,
-        // fullname is handled by trigger, no need to send
-      }
-
-      const { data: updatedStudent, error: updateError } = await supabase
-        .from("students")
-        .update(finalUpdateData)
-        .eq("id", editFormData.id)
-        .select(`id, fullname, email, phone, "rollNumber", status, created_at, photo_path`)
-        .single()
+        address: editFormData.address,
+        city: editFormData.city,
+        state: editFormData.state,
+        zipcode: editFormData.zipcode,
+        documents: finalDocumentsArray, // Updated documents
+        custom_data: editFormData.custom_data,
+        secondary_phone: editFormData.secondary_phone,
+        family_phone: editFormData.family_phone,
+        middlename: editFormData.middlename,
+        admission_year: editFormData.admission_year,
+        admission_category: editFormData.admission_category,
+        admission_type: editFormData.admission_type,
+        father_name: editFormData.father_name,
+        mother_name: editFormData.mother_name,
+        father_occupation: editFormData.father_occupation,
+        mother_occupation: editFormData.mother_occupation,
+        father_annual_income: editFormData.father_annual_income,
+        mother_annual_income: editFormData.mother_annual_income,
+        gender: editFormData.gender,
+        nationality: editFormData.nationality,
+        place_of_birth: editFormData.place_of_birth,
+        domicile_of_maharashtra: editFormData.domicile_of_maharashtra,
+        phd_handicap: editFormData.phd_handicap,
+        religion: editFormData.religion,
+        caste: editFormData.caste,
+        blood_group: editFormData.blood_group,
+        category_type: editFormData.category_type,
+        aadhar_card_number: editFormData.aadhar_card_number,
+        pan_no: editFormData.pan_no,
+        student_mobile_no: editFormData.student_mobile_no,
+        father_mobile_no: editFormData.father_mobile_no,
+        mother_mobile_no: editFormData.mother_mobile_no,
+        photo_path: editFormData.photo_path,
+        quota_selection: editFormData.quota_selection,
+        discipline: editFormData.discipline,
+        branch_preferences: editFormData.branch_preferences,
+        how_did_you_know: editFormData.how_did_you_know,
+        form_no: editFormData.form_no,
+        registration_no: editFormData.registration_no,
+        merit_no: editFormData.merit_no,
+      };
       
-      if (updateError) throw updateError
+      // Data for public.student_semesters table
+      const semesterUpdateData = {
+        roll_number: editFormData["rollNumber"], // Map from form
+        status: editFormData.status,
+        promotion_status: editFormData.promotion_status,
+        course_id: editFormData.course_id,
+        semester_id: editFormData.semester_id,
+        admission_fees: editFormData.admission_fees,
+        // fees_details: editFormData.fees_details, // Uncomment if you add this to the form
+      };
 
-      if (updatedStudent) {
-        // Update the list in-place
-        setStudents((prev) =>
-          prev.map((s) =>
-            s.id === updatedStudent.id ? (updatedStudent as StudentList) : s,
-          ),
-        )
-      }
-      setIsEditModalOpen(false) // Close edit modal
-      setEditFormData({}) // Clear form data
+      // --- 3. Database Transactions ---
+      
+      // Update students table
+      const { error: studentUpdateError } = await supabase
+        .from("students")
+        .update(studentUpdateData)
+        .eq("id", studentId);
+        
+      if (studentUpdateError) throw new Error(`Student update failed: ${studentUpdateError.message}`);
+
+      // Update student_semesters table
+      const { error: semesterUpdateError } = await supabase
+        .from("student_semesters")
+        .update(semesterUpdateData)
+        .eq("id", enrollmentId);
+        
+      if (semesterUpdateError) throw new Error(`Enrollment update failed: ${semesterUpdateError.message}`);
+
+      // --- 4. Refresh List ---
+      setIsEditModalOpen(false)
+      setEditFormData({})
+      fetchStudents() // This will refetch the list with all new data.
 
     } catch (err: any) {
       console.error("Error updating student:", err)
@@ -973,6 +1135,7 @@ export default function StudentListPage() {
   }
   
   // --- Table Columns Definition ---
+  // --- UPDATED: Columns reflect new StudentList data ---
   const columns: ColumnDef<StudentList>[] = [
     {
       accessorKey: "photo_path",
@@ -1000,13 +1163,18 @@ export default function StudentListPage() {
       cell: ({ row }) => <div className="font-medium">{row.getValue("fullname") || "N/A"}</div>,
     },
     {
-      accessorKey: "rollNumber",
+      accessorKey: "roll_number", // UPDATED
       header: "Roll Number",
     },
     {
-      accessorKey: "email",
-      header: "Email",
-      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("email")}</div>,
+      accessorKey: "course_name", // NEW
+      header: "Course",
+      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("course_name")}</div>,
+    },
+    {
+      accessorKey: "semester_name", // NEW
+      header: "Semester",
+      cell: ({ row }) => <div className="text-xs truncate">{row.getValue("semester_name")}</div>,
     },
     {
       accessorKey: "status",
@@ -1014,8 +1182,8 @@ export default function StudentListPage() {
       cell: ({ row }) => {
         const status = row.getValue("status") as string
         const variant = (
-          status === "approved" ? "default" :
-          status === "rejected" ? "destructive" :
+          status === "approved" || status === "active" ? "default" :
+          status === "rejected" || status === "inactive" ? "destructive" :
           "secondary"
         ) as "default" | "destructive" | "secondary"
         
@@ -1029,7 +1197,7 @@ export default function StudentListPage() {
     {
       id: "actions",
       cell: ({ row }) => {
-        const student = row.original
+        const student = row.original // This is a StudentList item
         return (
           <div className="text-right">
             <DropdownMenu>
@@ -1041,22 +1209,15 @@ export default function StudentListPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => openViewModal(student.id)}>
+                {/* --- UPDATED: Pass both IDs --- */}
+                <DropdownMenuItem onClick={() => openViewModal(student.student_id, student.enrollment_id)}>
                   <Eye className="mr-2 h-4 w-4" />
                   View Details
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openViewModal(student.id).then(() => {
-                  // A bit of a hack to open edit modal after view modal data is loaded
-                  // A better way would be to fetch data *then* open edit modal directly
-                  const checkData = setInterval(() => {
-                    if (selectedStudent && selectedStudent.id === student.id) {
-                      clearInterval(checkData);
-                      openEditModal(selectedStudent);
-                    }
-                  }, 100);
-                })}>
+                {/* --- UPDATED: Pass both IDs --- */}
+                <DropdownMenuItem onClick={() => handleDirectEditClick(student.student_id, student.enrollment_id)}>
                   <Edit className="mr-2 h-4 w-4" />
-                  Edit Student
+                  Edit Enrollment
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-destructive">
@@ -1071,7 +1232,7 @@ export default function StudentListPage() {
     },
   ]
 
-  // --- Table Instance ---
+  // --- Table Instance (Unchanged) ---
   const table = useReactTable({
     data: students,
     columns,
@@ -1091,6 +1252,7 @@ export default function StudentListPage() {
 
   // --- Modal Content Renderers ---
   
+  // --- UPDATED: Uses `selectedStudent` which now contains merged data ---
   const renderViewContent = () => (
     <div className="space-y-6">
       {selectedStudent?.photo_path && (
@@ -1111,15 +1273,17 @@ export default function StudentListPage() {
         <h4 className="text-lg font-semibold mb-3">Personal Details</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <DetailItem label="Full Name" value={selectedStudent?.fullname} />
+          {/* --- UPDATED: Reads `rollNumber` from the merged object --- */}
           <DetailItem label="Roll Number" value={selectedStudent?.['rollNumber']} />
           <DetailItem label="Email" value={selectedStudent?.email} />
           <DetailItem label="Phone" value={selectedStudent?.phone} />
           <DetailItem label="Date of Birth" value={selectedStudent?.dateofbirth ? format(parseISO(selectedStudent.dateofbirth), "PPP") : "N/A"} />
+          {/* --- UPDATED: Reads `status` from the merged object --- */}
           <DetailItem label="Status" value={
             <Badge 
               variant={
-                selectedStudent?.status === "approved" ? "default" :
-                selectedStudent?.status === "rejected" ? "destructive" :
+                selectedStudent?.status === "approved" || selectedStudent?.status === "active" ? "default" :
+                selectedStudent?.status === "rejected" || selectedStudent?.status === "inactive" ? "destructive" :
                 "secondary"
               }
               className="capitalize"
@@ -1134,6 +1298,7 @@ export default function StudentListPage() {
 
       <Separator />
 
+      {/* --- This section for custom_data remains correct --- */}
       {selectedStudent?.custom_data && Object.keys(selectedStudent.custom_data).length > 0 && (
         <section>
           <h4 className="text-lg font-semibold mb-3">Additional Information</h4>
@@ -1145,10 +1310,10 @@ export default function StudentListPage() {
         </section>
       )}
 
+      {/* --- This section for documents remains correct --- */}
       {selectedStudent?.documents && selectedStudent.documents.length > 0 && (
         <section>
           <h4 className="text-lg font-semibold mb-3">Uploaded Documents</h4>
-          {/* 🌟 NEW: DocumentViewer component added here 🌟 */}
           <DocumentViewer documents={selectedStudent.documents} supabase={supabase} />
           <div className="space-y-2">
             {selectedStudent.documents
@@ -1161,7 +1326,8 @@ export default function StudentListPage() {
       )}
     </div>
   )
-
+  
+  // --- UPDATED: This form now edits fields from both tables ---
   const renderEditForm = () => (
     <form onSubmit={handleEditSubmit}>
       <Tabs defaultValue="personal" className="w-full">
@@ -1172,7 +1338,7 @@ export default function StudentListPage() {
           <TabsTrigger value="docs">Docs</TabsTrigger>
         </TabsList>
         
-        {/* Personal & Parent Tab */}
+        {/* Personal & Parent Tab (Fields from `students` table) */}
         <TabsContent value="personal" className="space-y-6 pt-4">
           <Card>
             <CardHeader>
@@ -1186,10 +1352,11 @@ export default function StudentListPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormDatePickerGroup label="Date of Birth" date={editFormDateOfBirth} setDate={setEditFormDateOfBirth} required />
-                <FormSelectGroup label="Gender" name="gender" value={editFormData.gender} onValueChange={(val) => handleEditSelectChange("gender", val)} options={genderOptions} placeholder="Select gender" />
+                <FormSelectGroup label="Gender" name="gender" value={editFormData.gender} onValueChange={(val: string) => handleEditSelectChange("gender", val)} options={genderOptions} placeholder="Select gender" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormInputGroup label="Email Address" name="email" type="email" value={editFormData.email || ""} onChange={handleEditChange} required />
+                {/* --- UPDATED: This field is now from `student_semesters` --- */}
                 <FormInputGroup label="Roll Number" name="rollNumber" value={editFormData['rollNumber'] || ""} onChange={handleEditChange} required />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1216,6 +1383,7 @@ export default function StudentListPage() {
               <CardTitle>Parent / Guardian Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* ... All parent fields are from `students` table, this is correct ... */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormInputGroup label="Father's Name" name="father_name" value={editFormData.father_name || ""} onChange={handleEditChange} />
                 <FormInputGroup label="Father's Occupation" name="father_occupation" value={editFormData.father_occupation || ""} onChange={handleEditChange} />
@@ -1241,10 +1409,13 @@ export default function StudentListPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* --- UPDATED: admission_year is on `students` table --- */}
                 <FormInputGroup label="Admission Year" name="admission_year" value={editFormData.admission_year || ""} onChange={handleEditChange} />
+                {/* --- UPDATED: admission_fees is on `student_semesters` table --- */}
                 <FormInputGroup label="Admission Fees" name="admission_fees" type="number" value={editFormData.admission_fees || ""} onChange={handleEditChange} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* --- UPDATED: course_id is on `student_semesters` table --- */}
                 <FormSearchableSelectGroup
                   label="Course"
                   value={editFormData.course_id ?? null}
@@ -1253,6 +1424,7 @@ export default function StudentListPage() {
                   placeholder="Select course"
                   required
                 />
+                {/* --- UPDATED: semester_id is on `student_semesters` table --- */}
                 <FormSearchableSelectGroup
                   label="Semester"
                   value={editFormData.semester_id ?? null}
@@ -1264,12 +1436,15 @@ export default function StudentListPage() {
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormSelectGroup label="Enrollment Status" name="status" value={editFormData.status} onValueChange={(val) => handleEditSelectChange("status", val)} options={statusOptions} placeholder="Select status" required />
-                <FormSelectGroup label="Promotion Status" name="promotion_status" value={editFormData.promotion_status} onValueChange={(val) => handleEditSelectChange("promotion_status", val)} options={promotionStatusOptions} placeholder="Select status" required />
+                {/* --- UPDATED: status is on `student_semesters` table --- */}
+                <FormSelectGroup label="Enrollment Status" name="status" value={editFormData.status} onValueChange={(val: string) => handleEditSelectChange("status", val)} options={statusOptions} placeholder="Select status" required />
+                {/* --- UPDATED: promotion_status is on `student_semesters` table --- */}
+                <FormSelectGroup label="Promotion Status" name="promotion_status" value={editFormData.promotion_status} onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} options={promotionStatusOptions} placeholder="Select status" required />
               </div>
             </CardContent>
           </Card>
           
+          {/* --- Address fields are on `students` table, this is correct --- */}
           <Card>
             <CardHeader>
               <CardTitle>Address Details</CardTitle>
@@ -1286,7 +1461,7 @@ export default function StudentListPage() {
           </Card>
         </TabsContent>
         
-        {/* Application & Category Tab */}
+        {/* Application & Category Tab (All fields from `students` table) */}
         <TabsContent value="application" className="space-y-6 pt-4">
           <Card>
             <CardHeader>
@@ -1320,20 +1495,21 @@ export default function StudentListPage() {
                 <FormInputGroup label="Category Type" name="category_type" value={editFormData.category_type || ""} onChange={handleEditChange} />
               </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormSelectGroup label="Domicile of Maharashtra" name="domicile_of_maharashtra" value={editFormData.domicile_of_maharashtra} onValueChange={(val) => handleEditSelectChange("domicile_of_maharashtra", val)} options={yesNoOptions} placeholder="Select Y/N" />
-                <FormSelectGroup label="PH/Handicap" name="phd_handicap" value={editFormData.phd_handicap} onValueChange={(val) => handleEditSelectChange("phd_handicap", val)} options={yesNoOptions} placeholder="Select Y/N" />
+                <FormSelectGroup label="Domicile of Maharashtra" name="domicile_of_maharashtra" value={editFormData.domicile_of_maharashtra} onValueChange={(val: string) => handleEditSelectChange("domicile_of_maharashtra", val)} options={yesNoOptions} placeholder="Select Y/N" />
+                <FormSelectGroup label="PH/Handicap" name="phd_handicap" value={editFormData.phd_handicap} onValueChange={(val: string) => handleEditSelectChange("phd_handicap", val)} options={yesNoOptions} placeholder="Select Y/N" />
               </div>
             </CardContent>
           </Card>
         </TabsContent>
         
-        {/* Documents & Custom Fields Tab */}
+        {/* Documents & Custom Fields Tab (Fields from `students` table) */}
         <TabsContent value="docs" className="space-y-6 pt-4">
           <Card>
             <CardHeader>
               <CardTitle>Manage Documents</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* ... Document management UI ... (Unchanged) */}
               <div className="space-y-2">
                 {(editFormData.documents || []).length === 0 && filesToAdd.length === 0 && (
                   <p className="text-sm text-muted-foreground italic">No documents uploaded.</p>
@@ -1407,6 +1583,7 @@ export default function StudentListPage() {
               <CardTitle>Additional Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* ... Custom fields UI ... (Unchanged) */}
               <div className="space-y-3">
                 {Object.keys(editFormData.custom_data || {}).length === 0 && (
                    <p className="text-sm text-muted-foreground italic">No additional information added.</p>
@@ -1476,7 +1653,7 @@ export default function StudentListPage() {
   // --- Main Page Render ---
   return (
     <div className="p-4 md:p-8 space-y-6">
-      {/* 1. Page Header */}
+      {/* 1. Page Header (Unchanged) */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -1494,7 +1671,7 @@ export default function StudentListPage() {
         </Link>
       </div>
 
-      {/* 2. Error Message */}
+      {/* 2. Error Message (Unchanged) */}
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -1506,8 +1683,8 @@ export default function StudentListPage() {
       {/* 3. Data Table Card */}
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Manage Students</CardTitle>
-          {/* Filter Bar */}
+          <CardTitle>Manage Student Enrollments</CardTitle>
+          {/* Filter Bar (Unchanged) */}
           <div className="py-4 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <SearchableSelect
@@ -1606,7 +1783,7 @@ export default function StudentListPage() {
               </TableBody>
             </Table>
           </div>
-          {/* Pagination */}
+          {/* Pagination (Unchanged) */}
           <div className="flex items-center justify-end space-x-2 py-4">
             <Button
               variant="outline"
@@ -1632,13 +1809,11 @@ export default function StudentListPage() {
 
       {/* 4. STUDENT VIEW MODAL */}
       <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
-        {/* 🌟 MODIFIED: Added scrolling classes 🌟 */}
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Student Details</DialogTitle>
           </DialogHeader>
           
-          {/* 🌟 MODIFIED: This middle div is now the scrollable area 🌟 */}
           <div className="flex-1 overflow-y-auto p-6 pt-0">
             {modalLoading && (
               <div className="flex items-center justify-center h-48">
@@ -1653,15 +1828,15 @@ export default function StudentListPage() {
               </Alert>
             )}
             {!modalLoading && selectedStudent && (
-              // renderViewContent is now directly in the scrollable area
               renderViewContent()
             )}
           </div>
 
           <DialogFooter>
+            {/* --- UPDATED: Calls setupEditModal with the merged data --- */}
             <Button 
               variant="default" 
-              onClick={() => selectedStudent && openEditModal(selectedStudent)}
+              onClick={() => selectedStudent && setupEditModal(selectedStudent)}
               disabled={!selectedStudent}
             >
               <Edit className="h-4 w-4 mr-2" />
@@ -1676,7 +1851,6 @@ export default function StudentListPage() {
       
       {/* 5. STUDENT EDIT MODAL */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        {/* 🌟 MODIFIED: Added scrolling classes 🌟 */}
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Student Information</DialogTitle>
@@ -1685,8 +1859,13 @@ export default function StudentListPage() {
             </DialogDescription>
           </DialogHeader>
           
-          {/* 🌟 MODIFIED: This middle div is now the scrollable area 🌟 */}
           <div className="flex-1 overflow-y-auto p-6 pt-0">
+            {/* --- UPDATED: Show loading spinner while fetching data for edit --- */}
+            {modalLoading && (
+              <div className="flex items-center justify-center h-96">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            )}
             {modalError && (
               <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
@@ -1694,8 +1873,10 @@ export default function StudentListPage() {
                 <AlertDescription>{modalError}</AlertDescription>
               </Alert>
             )}
-            {/* renderEditForm has its own footer, so it's placed directly */}
-            {renderEditForm()}
+            {/* Render the form only if not loading and form data is set */}
+            {!modalLoading && editFormData.id && (
+              renderEditForm()
+            )}
           </div>
         </DialogContent>
       </Dialog>

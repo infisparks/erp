@@ -1,4 +1,3 @@
-// e.g., app/dashboard/admin/promotion/page.tsx
 "use client"
 
 import React, { useState, useEffect, useMemo, useCallback } from "react"
@@ -34,13 +33,26 @@ interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
 interface Semester { id: string; name: string; course_id: string; }
 
+// --- UPDATED: Student interface for this page ---
 interface Student { 
-    id: string; 
+    id: string; // The student's main ID
     fullname: string | null; 
-    "rollNumber": string; 
-    promotion_status: string; 
-    branch_history: any[];
+    rollNumber: string; // From student_semesters
+    promotion_status: string; // From student_semesters
+    branch_history: any[]; // From students table
 }
+
+// --- NEW: Type for Supabase query result ---
+type StudentSemesterRow = {
+  roll_number: string;
+  promotion_status: string;
+  students: {
+    id: string;
+    fullname: string | null;
+    branch_history: any[];
+  } | null; // The join might return null
+};
+
 
 // --- Helper Functions ---
 const getSemNumber = (semName: string): number => {
@@ -112,23 +124,44 @@ export default function PromotionPage() {
   }, [sourceSemesterId, allSemesters]);
 
 
-  // --- Data Fetching: Students ---
+  // --- Data Fetching: Students (UPDATED) ---
   const fetchStudents = useCallback(async () => {
-    if (!sourceSemesterId) {
+    if (!sourceSemesterId || !sourceCourseId) {
       setStudents([]);
       return;
     }
     setLoading(true);
+    setStatusMessage(null);
     try {
+      // Query 'student_semesters' and join 'students'
       const { data, error } = await supabase
-        .from("students")
-        .select('id, fullname, "rollNumber", promotion_status, branch_history')
+        .from("student_semesters")
+        .select(`
+          roll_number,
+          promotion_status,
+          students (id, fullname, branch_history)
+        `)
         .eq("semester_id", sourceSemesterId)
         .eq("course_id", sourceCourseId)
-        .order("fullname");
+        .order("students(fullname)");
       
       if (error) throw error;
-      setStudents(data || []);
+
+      // Transform the nested data
+      const formattedStudents = (data as StudentSemesterRow[])
+        .map((item: StudentSemesterRow) => {
+          if (!item.students) return null; // Skip if join failed
+          return {
+            id: item.students.id,
+            fullname: item.students.fullname,
+            rollNumber: item.roll_number,
+            promotion_status: item.promotion_status,
+            branch_history: item.students.branch_history || []
+          }
+        })
+        .filter((student: Student | null): student is Student => student !== null);
+      
+      setStudents(formattedStudents || []);
       setSelectedStudentIds([]);
     } catch (err: any) {
       setStatusMessage({ type: 'error', message: `Student Load Error: ${err.message}` });
@@ -160,12 +193,17 @@ export default function PromotionPage() {
     fetchConfig();
   }, [supabase]);
 
+  // Re-fetch students when filters change
   useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]);
+    if (sourceCourseId && sourceSemesterId) {
+      fetchStudents();
+    } else {
+      setStudents([]); // Clear students if filters are incomplete
+    }
+  }, [fetchStudents, sourceCourseId, sourceSemesterId]);
 
 
-  // --- Bulk Promotion Logic ---
+  // --- Bulk Promotion Logic (UPDATED) ---
   const updateStudentsSemester = async (newSemesterId: string, statusChange: 'Promoted' | 'Eligible' | 'Hold') => {
     
     if (!sourceSemesterId || selectedStudentIds.length === 0) {
@@ -177,28 +215,24 @@ export default function PromotionPage() {
     setStatusMessage(null);
 
     try {
-      const studentIds = students
-        .filter(s => selectedStudentIds.includes(s.id))
-        .map(s => s.id);
-      
-      if (studentIds.length === 0) {
-        setStatusMessage({ type: 'error', message: 'No students selected for update.' });
-        setIsPromoting(false);
-        return;
-      }
-
+      // The old code updated 'students'. The new logic updates 'student_semesters'
+      // We are "moving" the enrollment record to a new semester
       const { error } = await supabase
-        .from("students")
-        .update({ semester_id: newSemesterId, promotion_status: statusChange })
-        .in("id", studentIds);
+        .from("student_semesters")
+        .update({ 
+          semester_id: newSemesterId, 
+          promotion_status: statusChange 
+        })
+        .in("student_id", selectedStudentIds)
+        .eq("semester_id", sourceSemesterId); // Critial: only update their current enrollment
 
       if (error) throw error;
 
-      await fetchStudents();
+      await fetchStudents(); // Refresh the list
       const action = statusChange === 'Promoted' ? 'promoted' : 'demoted/rolled back';
       const semName = allSemesters.find(s => s.id === newSemesterId)?.name || 'Next Semester';
 
-      setStatusMessage({ type: 'success', message: `${studentIds.length} students ${action} to ${semName} successfully!` });
+      setStatusMessage({ type: 'success', message: `${selectedStudentIds.length} students ${action} to ${semName} successfully!` });
 
     } catch (err: any) {
       setStatusMessage({ type: 'error', message: `Update Failed: ${err.message}` });
@@ -224,7 +258,7 @@ export default function PromotionPage() {
   };
 
 
-  // --- Single Branch Transfer Logic ---
+  // --- Single Branch Transfer Logic (UPDATED) ---
   const handleBranchTransfer = async () => {
     if (!selectedStudent || !newCourseId || !sourceSemesterId || newCourseId === sourceCourseId) {
       setStatusMessage({ type: 'error', message: 'Select a student and a different branch.' });
@@ -242,21 +276,34 @@ export default function PromotionPage() {
       
       if (!targetNewSemesterId) throw new Error(`Destination branch (${newCourse}) does not have a ${targetSemName} defined.`);
 
+      // 1. Update the enrollment (student_semesters)
+      const { error: semesterError } = await supabase
+        .from("student_semesters")
+        .update({
+          course_id: newCourseId,
+          semester_id: targetNewSemesterId,
+          // You might want to reset promotion_status here too, e.g., promotion_status: 'Eligible'
+        })
+        .eq('student_id', selectedStudent.id)
+        .eq('semester_id', sourceSemesterId); // Match the *current* enrollment
+      
+      if (semesterError) throw new Error(`Semester Update Error: ${semesterError.message}`);
+
+      // 2. Update the student's permanent record (branch_history on 'students' table)
       const historyEntry = {
         date: new Date().toISOString().split('T')[0],
         old_course_id: sourceCourseId,
         new_course_id: newCourseId,
         old_semester_id: sourceSemesterId,
+        new_semester_id: targetNewSemesterId,
         reason: transferNotes || 'Branch change requested by administration.',
         old_course_name: oldCourse,
         new_course_name: newCourse,
       };
 
-      const { error } = await supabase
+      const { error: studentError } = await supabase
         .from("students")
         .update({ 
-          course_id: newCourseId,
-          semester_id: targetNewSemesterId,
           branch_history: [
             ...(selectedStudent.branch_history as any[] || []), 
             historyEntry
@@ -264,8 +311,9 @@ export default function PromotionPage() {
         })
         .eq('id', selectedStudent.id);
 
-      if (error) throw error;
+      if (studentError) throw new Error(`Student History Error: ${studentError.message}`);
 
+      // 3. Success
       await fetchStudents();
       setSelectedStudent(null);
       setNewCourseId(null);
@@ -280,7 +328,6 @@ export default function PromotionPage() {
   };
 
 
-  // 🔧 FIX: Moved 'filteredStudents' definition before its usage
   // --- Search Logic ---
   const filteredStudents = useMemo(() => {
     if (!students.length) return [];
@@ -303,7 +350,6 @@ export default function PromotionPage() {
   };
   
   const handleSelectAll = () => {
-    // 🔧 FIX: Use 'filteredStudents' which is now defined
     const filteredEligibleIds = filteredStudents
       .filter(s => s.promotion_status === 'Eligible')
       .map(s => s.id);
@@ -326,7 +372,6 @@ export default function PromotionPage() {
   };
   
   const allPromotableSelected = useMemo(() => {
-    // 🔧 FIX: Use 'filteredStudents' which is now defined
     const filteredEligibleIds = filteredStudents
       .filter(s => s.promotion_status === 'Eligible')
       .map(s => s.id);
@@ -346,7 +391,7 @@ export default function PromotionPage() {
           <CardDescription>Manage bulk promotion and individual branch transfers.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />}
+          {loading && !students.length && <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />}
 
           {/* --- Global Messages --- */}
           {statusMessage && (
@@ -437,7 +482,14 @@ export default function PromotionPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredStudents.map((student) => (
+                    {loading && (
+                        <tr>
+                          <td colSpan={5} className="text-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
+                          </td>
+                        </tr>
+                    )}
+                    {!loading && filteredStudents.map((student) => (
                       <tr key={student.id} className={selectedStudentIds.includes(student.id) ? 'bg-blue-50' : ''}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <input
@@ -465,7 +517,7 @@ export default function PromotionPage() {
                   </tbody>
                 </table>
               </div>
-              {filteredStudents.length === 0 && <p className="text-center py-4 text-gray-500">No students found matching your filters/search.</p>}
+              {!loading && filteredStudents.length === 0 && <p className="text-center py-4 text-gray-500">No students found matching your filters/search.</p>}
             </div>
           )}
           
