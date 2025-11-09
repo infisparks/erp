@@ -210,12 +210,14 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
   const tuitionFeePayments = year.payments.filter(p => p.fees_type === 'Tuition Fee');
   const otherFeePayments = year.payments.filter(p => p.fees_type !== 'Tuition Fee' && p.fees_type !== 'Scholarship');
 
-  const scholarshipUsed = scholarshipPayments.reduce((sum, p) => sum + p.amount, 0);
+  // --- 💡 FIX: Renamed 'scholarshipUsed' to 'scholarshipReceived' for clarity ---
+  const scholarshipReceived = scholarshipPayments.reduce((sum, p) => sum + p.amount, 0);
   const tuitionPaid = tuitionFeePayments.reduce((sum, p) => sum + p.amount, 0);
   const otherFeesPaid = otherFeePayments.reduce((sum, p) => sum + p.amount, 0);
   // --- END OF UPDATE ---
 
-  const remainingScholarship = year.scholarship_amount - scholarshipUsed;
+  // --- 💡 FIX: Updated variable name here as well ---
+  const remainingScholarship = year.scholarship_amount - scholarshipReceived;
 
   return (
     <AccordionItem value={year.id.toString()} className="border-t">
@@ -285,7 +287,8 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
             <Separator className="my-2"/>
             <h4 className="font-bold text-sm border-b pb-1 text-orange-600">Scholarship Ledger</h4>
             <FeeSummaryRow label="Allocated Scholarship" value={year.scholarship_amount} />
-            <FeeSummaryRow label="Scholarship Used" value={scholarshipUsed} colorClass="text-green-600" />
+            {/* --- 💡 FIX: Updated label from "Scholarship Used" to "Scholarship Received" --- */}
+            <FeeSummaryRow label="Scholarship Received" value={scholarshipReceived} colorClass="text-green-600" />
             <FeeSummaryRow 
               label="Remaining Scholarship" 
               value={remainingScholarship} 
