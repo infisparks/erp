@@ -15,7 +15,9 @@ import {
   SortingState,
   getSortedRowModel,
 } from "@tanstack/react-table"
-import { format, parseISO } from "date-fns" // For date formatting
+import { toast } from "sonner"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable" // <-- 1. THIS IS THE FIX (IMPORT)
 
 // --- ShadCN UI Components ---
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -41,6 +43,9 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 
+// --- PrimeReact Components ---
+import { Dropdown } from "primereact/dropdown"
+
 // --- Icons ---
 import {
   Search,
@@ -48,29 +53,19 @@ import {
   UserRound,
   Loader2,
   XCircle,
-  MoreHorizontal,
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
-  DollarSign, // For Fees
-  Filter,
-  RotateCw, // For Promotion
-  CheckCircle, // For Status
-  FileSpreadsheet, // NEW: For Excel Download
-  ListTodo, // NEW: For Fees Detail
-  ClipboardList, // NEW: For Edit/View Detail
-  Menu, // General Action Icon
-  CheckSquare, // ✅ NEW: For Registration
+  FileSpreadsheet, // For Excel
+  Printer, // For PDF
+  Menu,
+  CheckSquare, // For Registration
 } from "lucide-react"
 
-// --- PrimeReact Components ---
-import { Dropdown } from "primereact/dropdown"
-
 // --- Type Definitions ---
-interface StudentEnrollment {
-  enrollment_id: string
+interface PendingStudent {
   student_id: string
-  academic_year_id: string
+  academic_year_id: string 
   fullname: string | null
   email: string | null
   roll_number: string | null
@@ -78,13 +73,8 @@ interface StudentEnrollment {
   course_name: string
   academic_year_name: string
   academic_year_session: string
-  semester_name: string
-  status: string // This is from student_semesters
-  promotion_status: string
-
-  // --- Fields from student_academic_years ---
-  academic_year_status: string | null // The 'status' from the parent academic year
-  is_registered: boolean // The 'is_registered' from the parent academic year
+  status: string // 'Active'
+  is_registered: boolean // false
 }
 
 // For filters
@@ -102,21 +92,14 @@ interface AcademicYear {
   name: string
   course_id: string
 }
-interface Semester {
-  id: string
-  name: string
-  academic_year_id: string
-}
 
 // -------------------------------------------------------------------
 // 🚀 Reusable Helper Components 🚀
 // -------------------------------------------------------------------
 
-// --- Helper Functions ---
 const sortByName = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, undefined, { numeric: true })
 
-// --- Avatar Component ---
 const StudentAvatar: React.FC<{
   src: string | null
   alt: string | null
@@ -143,7 +126,6 @@ const StudentAvatar: React.FC<{
   )
 }
 
-// --- Helper Dropdown Component (Using PrimeReact Dropdown for feature parity) ---
 const DropdownSelect: React.FC<{
   label: string
   value: string | null
@@ -167,15 +149,15 @@ const DropdownSelect: React.FC<{
 )
 
 // -------------------------------------------------------------------
-// 💰 Main Fees Management Page Component 💰
+// ⌛ Main Registration Pending Page Component ⌛
 // -------------------------------------------------------------------
 
-export default function FeesManagementPage() {
+export default function RegistrationPendingPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
-  const [students, setStudents] = useState<StudentEnrollment[]>([])
-  const [loading, setLoading] = useState(false) // Set to false initially, fetchStudents handles it
+  const [students, setStudents] = useState<PendingStudent[]>([])
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error"
@@ -199,12 +181,10 @@ export default function FeesManagementPage() {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<
     string | null
   >(null)
-  const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
 
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
-  const [allSemesters, setAllSemesters] = useState<Semester[]>([])
 
   const [loadingFilters, setLoadingFilters] = useState(true)
 
@@ -228,15 +208,8 @@ export default function FeesManagementPage() {
       .sort(sortByName)
   }, [allAcademicYears, selectedCourse])
 
-  const semesterOptions = useMemo(() => {
-    if (!selectedAcademicYear) return []
-    return allSemesters
-      .filter((s) => s.academic_year_id === selectedAcademicYear)
-      .sort(sortByName)
-  }, [allSemesters, selectedAcademicYear])
-
   // --- Data Fetching (Students) ---
-  const fetchStudents = useCallback(
+  const fetchPendingStudents = useCallback(
     async (
       nameQuery: string,
       rollQuery: string,
@@ -248,177 +221,101 @@ export default function FeesManagementPage() {
 
       try {
         let query = supabase
-          .from("student_semesters")
+          .from("student_academic_years")
           .select(
             `
-          id, 
-          status,
-          promotion_status,
-          student_academic_year_id,
-          student:students (
-            id,
-            fullname,
-            email,
-            photo_path,
-            roll_number
-          ),
-          semester:semesters ( name ),
-          academic_year:student_academic_years (
-            id,
+            id, 
+            student_id,
             academic_year_name,
             academic_year_session,
             status,
             is_registered,
-            course:courses ( name )
-          )
+            student:students (
+              id,
+              fullname,
+              email,
+              photo_path,
+              roll_number
+            ),
+            course:courses (
+              id,
+              name,
+              stream_id
+            )
           `,
           )
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
+          .eq("is_registered", false) // CORE FILTER 1
+          .eq("status", "Active")     // CORE FILTER 2
 
         // --- Filter Logic ---
-        let ayFilterIds: string[] | null = null
-
         if (shouldApplyFilters) {
-          // Stream Filter
-          if (selectedStream && !selectedCourse) {
-            const { data: courseIdsData, error: cError } = await supabase
-              .from("courses")
-              .select("id")
-              .eq("stream_id", selectedStream)
-            if (cError) throw cError
-            const courseIds = courseIdsData.map((c: { id: string }) => c.id)
-
-            if (courseIds.length > 0) {
-              const { data: ayIds, error: ayError } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .in("course_id", courseIds)
-              if (ayError) throw ayError
-              ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
-            } else {
-              ayFilterIds = []
-            }
+          if (selectedStream) {
+            query = query.eq("course.stream_id", selectedStream)
           }
-
-          // Course Filter
           if (selectedCourse) {
-            const { data: ayIds, error } = await supabase
-              .from("student_academic_years")
-              .select("id")
-              .eq("course_id", selectedCourse)
-            if (error) throw error
-            ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
+            query = query.eq("course_id", selectedCourse)
           }
-
-          // Academic Year Filter
           if (selectedAcademicYear) {
             const yearName = allAcademicYears.find(
               (ay) => ay.id === selectedAcademicYear,
             )?.name
+            
             if (yearName) {
-              const { data: ayIds, error } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .eq("academic_year_name", yearName)
-              if (error) throw error
-
-              const matchingIds = ayIds.map((ay: { id: string }) => ay.id)
-
-              if (ayFilterIds) {
-                ayFilterIds = ayFilterIds.filter((id) =>
-                  matchingIds.includes(id),
-                )
-              } else {
-                ayFilterIds = matchingIds
-              }
-            } else {
-              ayFilterIds = []
+              query = query.eq("academic_year_name", yearName)
+            } else if (selectedStream || selectedCourse) {
+              query = query.eq("id", "0"); 
             }
           }
+        } 
 
-          // Apply the Academic Year ID filter
-          if (ayFilterIds !== null) {
-            if (ayFilterIds.length === 0) {
-              query = query.eq("student_academic_year_id", "0") // Use string '0' for UUID mismatch
-            } else {
-              query = query.in("student_academic_year_id", ayFilterIds)
-            }
-          }
-
-          // Semester Filter
-          if (selectedSemester) {
-            query = query.eq("semester_id", selectedSemester)
-          }
-        } // end if (shouldApplyFilters)
-
-        // --- Add Search Queries (Always apply for dedicated search) ---
+        // --- Add Search Queries ---
         if (nameQuery) {
-          // Use full-text search index if available, or ilike
           query = query.ilike("student.fullname", `%${nameQuery}%`)
         }
         if (rollQuery) {
           query = query.ilike("student.roll_number", `%${rollQuery}%`)
         }
+        
+        query = query.order("fullname", { referencedTable: "student", ascending: true })
 
         const { data, error } = await query
         if (error) throw error
 
         if (data) {
-          const flattenedData: StudentEnrollment[] = data
+          const flattenedData: PendingStudent[] = data
             .map((item: any) => {
-              if (!item.student || !item.academic_year || !item.semester)
-                return null
+              if (!item.student || !item.course)
+                return null 
 
               return {
-                enrollment_id: item.id,
+                academic_year_id: item.id,
                 student_id: item.student.id,
-                academic_year_id: item.student_academic_year_id,
                 fullname: item.student.fullname,
                 email: item.student.email,
                 roll_number: item.student.roll_number,
                 photo_path: item.student.photo_path,
-                course_name: item.academic_year?.course?.name || "N/A",
-                academic_year_name:
-                  item.academic_year?.academic_year_name || "N/A",
-                academic_year_session:
-                  item.academic_year?.academic_year_session || "N/A",
-                semester_name: item.semester?.name || "N/A",
+                course_name: item.course.name,
+                academic_year_name: item.academic_year_name,
+                academic_year_session: item.academic_year_session,
                 status: item.status,
-                promotion_status: item.promotion_status,
-
-                // --- Map the new values ---
-                academic_year_status: item.academic_year?.status || null,
-                is_registered: item.academic_year?.is_registered ?? false, // Default to false if null/undefined
+                is_registered: item.is_registered,
               }
             })
             .filter(
-              (s: StudentEnrollment | null): s is StudentEnrollment => s !== null,
+              (s: PendingStudent | null): s is PendingStudent => s !== null,
             )
 
           setStudents(flattenedData)
 
-          // Only show message if no global search was performed, otherwise the table handles it
-          if (
-            flattenedData.length === 0 &&
-            (selectedStream ||
-              selectedCourse ||
-              selectedAcademicYear ||
-              selectedSemester)
-          ) {
-            setStatusMessage({
+          if (flattenedData.length === 0) {
+             setStatusMessage({
               type: "error",
-              message: "No students found matching the selected filters.",
-            })
-          } else if (flattenedData.length === 0 && (nameQuery || rollQuery)) {
-            setStatusMessage({
-              type: "error",
-              message: "No student found with that name or roll number.",
+              message: "No students found matching the selected criteria.",
             })
           }
         }
       } catch (err: any) {
-        console.error("Error fetching students:", err)
+        console.error("Error fetching pending students:", err)
         setError(
           err.message || "An unknown error occurred while fetching students.",
         )
@@ -431,7 +328,6 @@ export default function FeesManagementPage() {
       selectedStream,
       selectedCourse,
       selectedAcademicYear,
-      selectedSemester,
       allAcademicYears,
     ],
   )
@@ -441,23 +337,20 @@ export default function FeesManagementPage() {
     const fetchAllConfig = async () => {
       setLoadingFilters(true)
       try {
-        const [streamData, courseData, ayData, semData] = await Promise.all([
+        const [streamData, courseData, ayData] = await Promise.all([
           supabase.from("streams").select("*"),
           supabase.from("courses").select("*"),
           supabase.from("academic_years").select("id, name, course_id"),
-          supabase.from("semesters").select("id, name, academic_year_id"),
         ])
 
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
         if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[])
-        if (semData.data) setAllSemesters(semData.data as Semester[])
 
         const errors = [
           streamData.error,
           courseData.error,
           ayData.error,
-          semData.error,
         ].filter(Boolean)
         if (errors.length > 0) {
           throw new Error(errors.map((e) => (e as Error).message).join(", "))
@@ -475,78 +368,55 @@ export default function FeesManagementPage() {
   // --- Initial data load ---
   useEffect(() => {
     if (!loadingFilters) {
-      // Load initial list (no filters, no search)
-      fetchStudents("", "", false)
+      fetchPendingStudents("", "", false)
     }
-  }, [fetchStudents, loadingFilters])
+  }, [fetchPendingStudents, loadingFilters])
 
   // --- Filter Handlers ---
   const handleStreamChange = (value: string | null) => {
     setSelectedStream(value)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
-    setSelectedSemester(null)
   }
 
   const handleCourseChange = (value: string | null) => {
     setSelectedCourse(value)
     setSelectedAcademicYear(null)
-    setSelectedSemester(null)
   }
 
   const handleAcademicYearChange = (value: string | null) => {
     setSelectedAcademicYear(value)
-    setSelectedSemester(null)
-  }
-
-  const handleSemesterChange = (value: string | null) => {
-    setSelectedSemester(value)
   }
 
   // --- Search and Action Handlers ---
   const handleFilterSearch = () => {
-    // Triggers a refetch with current filters and search terms
-    fetchStudents(studentSearch, rollNumberSearch, true)
+    fetchPendingStudents(studentSearch, rollNumberSearch, true)
   }
 
   const handleFilterClear = () => {
     setSelectedStream(null)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
-    setSelectedSemester(null)
     setStudentSearch("")
     setRollNumberSearch("")
     setGlobalFilter("")
-
-    // Refetch the default list (no filters, no search)
-    fetchStudents("", "", false)
+    fetchPendingStudents("", "", false)
   }
 
-  // --- NEW: Excel Export Handler ---
-  const handleExportToExcel = () => {
+  // --- EXPORT HANDLERS ---
+  const handleExportToCSV = () => {
     if (students.length === 0) {
-      setStatusMessage({
-        type: "error",
-        message:
-          "No data to export. Please filter and search for students first.",
-      })
+      toast.error("No data to export.")
       return
     }
-
-    // In a real application, you would use a library like `xlsx` (SheetJS)
-    // or call an API endpoint to generate a file server-side.
-    console.log("Exporting current students to Excel:", students)
-
-    // Placeholder logic for demonstration:
+    
     const headers = [
       "Full Name",
       "Email",
       "Roll Number",
       "Course",
       "Academic Year",
-      "Semester",
-      "Status",
-      "Promotion Status",
+      "Session",
     ]
     const csvContent = [
       headers.join(","),
@@ -556,44 +426,70 @@ export default function FeesManagementPage() {
           s.email,
           s.roll_number,
           `"${s.course_name}"`,
-          `"${s.academic_year_name} (${s.academic_year_session})"`,
-          s.semester_name,
-          s.status,
-          s.promotion_status,
+          `"${s.academic_year_name}"`,
+          s.academic_year_session,
         ].join(","),
       ),
     ].join("\n")
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob)
-      link.setAttribute("href", url)
-      link.setAttribute(
-        "download",
-        "student_fees_export_" +
-          new Date().toISOString().slice(0, 10) +
-          ".csv",
-      )
-      link.style.visibility = "hidden"
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      setStatusMessage({
-        type: "success",
-        message: `Successfully exported ${students.length} records to CSV/Excel.`,
-      })
-    } else {
-      setStatusMessage({
-        type: "error",
-        message:
-          "Your browser does not support automatic downloads. Please copy the data manually.",
-      })
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute(
+      "download",
+      `pending_registrations_${new Date().toISOString().slice(0, 10)}.csv`,
+    )
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    toast.success(`Successfully exported ${students.length} records to CSV.`)
+  }
+
+  const handleExportToPDF = () => {
+     if (students.length === 0) {
+      toast.error("No data to export.")
+      return
     }
+
+    const doc = new jsPDF()
+    const tableHead = [
+      "Full Name",
+      "Roll Number",
+      "Course",
+      "Academic Year",
+      "Session",
+    ]
+    const tableBody = students.map((s) => [
+      s.fullname,
+      s.roll_number,
+      s.course_name,
+      s.academic_year_name,
+      s.academic_year_session,
+    ])
+
+    doc.text("Pending Student Registrations", 14, 15)
+    
+    // --- 2. THIS IS THE FIX (FUNCTION CALL) ---
+    autoTable(doc, {
+      startY: 20,
+      head: [tableHead],
+      body: tableBody,
+      theme: "striped",
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [22, 160, 133] }, // Theme color
+    })
+    // ----------------------------------------
+
+    doc.save(
+      `pending_registrations_${new Date().toISOString().slice(0, 10)}.pdf`,
+    )
+    toast.success(`Successfully exported ${students.length} records to PDF.`)
   }
 
   // --- Table Columns Definition ---
-  const columns: ColumnDef<StudentEnrollment>[] = [
+  const columns: ColumnDef<PendingStudent>[] = [
     {
       accessorKey: "fullname",
       header: ({ column }) => (
@@ -607,12 +503,6 @@ export default function FeesManagementPage() {
       ),
       cell: ({ row }) => {
         const student = row.original
-
-        // --- Logic for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
-
         return (
           <div className="flex items-center gap-3">
             <StudentAvatar
@@ -625,13 +515,9 @@ export default function FeesManagementPage() {
               <div className="text-xs text-muted-foreground">
                 {student.email}
               </div>
-
-              {/* --- Conditional Badge --- */}
-              {isRegistrationPending && (
-                <Badge variant="destructive" className="mt-1 text-xs">
-                  Registration Pending
-                </Badge>
-              )}
+              <Badge variant="destructive" className="mt-1 text-xs">
+                Registration Pending
+              </Badge>
             </div>
           </div>
         )
@@ -642,13 +528,16 @@ export default function FeesManagementPage() {
       header: "Roll Number",
     },
     {
+      accessorKey: "course_name",
+      header: "Course",
+    },
+    {
       accessorKey: "academic_year_name",
-      header: "Current Enrollment",
+      header: "Pending Year",
       cell: ({ row }) => (
         <div>
-          <div className="font-medium">{row.original.course_name}</div>
-          <div className="text-xs text-muted-foreground">
-            {row.original.academic_year_name} ({row.original.semester_name})
+          <div className="font-medium">
+            {row.original.academic_year_name}
           </div>
           <div className="text-xs text-muted-foreground">
             {row.original.academic_year_session}
@@ -657,123 +546,22 @@ export default function FeesManagementPage() {
       ),
     },
     {
-      accessorKey: "promotion_status",
-      header: "Promotion Status",
-      cell: ({ row }) => (
-        <Badge
-          variant={
-            row.original.promotion_status === "Eligible" ? "default" : "secondary"
-          }
-          className="capitalize"
-        >
-          {row.original.promotion_status}
-        </Badge>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Enrollment Status",
-      cell: ({ row }) => (
-        <Badge
-          variant={row.original.status === "active" ? "default" : "destructive"}
-          className="capitalize"
-        >
-          {row.original.status}
-        </Badge>
-      ),
-    },
-    {
       id: "actions",
       header: "Actions",
       cell: ({ row }) => {
         const student = row.original
-        
-        // --- ✅ NEW: Check for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
 
         return (
           <div className="text-right">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <Menu className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                
-                {/* --- ✅ NEW: Conditional Registration Button --- */}
-                {isRegistrationPending && (
-                  <>
-                    <DropdownMenuItem asChild>
-                      <Link 
-                        href={`/student/registration?student_id=${student.student_id}`} 
-                        className="flex items-center text-red-600 hover:!text-red-700 font-medium"
-                      >
-                        <CheckSquare className="mr-2 h-4 w-4" />
-                        <span>Complete Registration</span>
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-
-                {/* 1. Add / View Payments */}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/student/fees/add?student_id=${student.student_id}`}
-                    className="flex items-center"
-                  >
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    <span>Add / View Payments</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {/* 2. Fees Detail */}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/student/fees/detail?student_id=${student.student_id}`}
-                    className="flex items-center"
-                  >
-                    <ListTodo className="mr-2 h-4 w-4" />
-                    <span>Fees Detail</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {/* 3. Promotion Management */}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/student/promotion?student_id=${student.student_id}`}
-                    className="flex items-center"
-                  >
-                    <RotateCw className="mr-2 h-4 w-4" />
-                    <span>Manage Promotion</span>
-                  </Link>
-                </DropdownMenuItem>
-                {/* 4. Status Management */}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/student/status?student_id=${student.student_id}`}
-                    className="flex items-center"
-                  >
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    <span>Manage Status</span>
-                  </Link>
-                </DropdownMenuItem>
-                {/* 5. Edit/View Detail */}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/student/form/detail?student_id=${student.student_id}&mode=view`}
-                    className="flex items-center"
-                  >
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    <span>Edit/View Detail</span>
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button asChild size="sm">
+              <Link
+                href={`/student/registration?student_id=${student.student_id}`}
+                className="flex items-center"
+              >
+                <CheckSquare className="mr-2 h-4 w-4" />
+                <span>Complete Registration</span>
+              </Link>
+            </Button>
           </div>
         )
       },
@@ -805,10 +593,11 @@ export default function FeesManagementPage() {
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Fees Management
+            Pending Registrations
           </h1>
           <p className="text-lg text-muted-foreground">
-            Search or filter for students to add payments and view fee history.
+            View and manage students who have not completed their academic year
+            registration.
           </p>
         </div>
       </div>
@@ -832,7 +621,7 @@ export default function FeesManagementPage() {
         >
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>
-            {statusMessage.type === "error" ? "Error" : "Success!"}
+            {statusMessage.type === "error" ? "No Results" : "Success!"}
           </AlertTitle>
           <AlertDescription>{statusMessage.message}</AlertDescription>
         </Alert>
@@ -841,11 +630,11 @@ export default function FeesManagementPage() {
       {/* 3. Data Table Card */}
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Find Student</CardTitle>
-          {/* --- UPDATED: Filters + Search --- */}
+          <CardTitle>Find Pending Students</CardTitle>
+          {/* --- Filters + Search --- */}
           <div className="py-4 space-y-4">
             {/* Filter Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <DropdownSelect
                 label="Filter by Stream"
                 options={streamOptions}
@@ -869,14 +658,6 @@ export default function FeesManagementPage() {
                 onChange={handleAcademicYearChange}
                 placeholder="All Years..."
                 disabled={loadingFilters || !selectedCourse}
-              />
-              <DropdownSelect
-                label="Filter by Semester"
-                options={semesterOptions}
-                value={selectedSemester}
-                onChange={handleSemesterChange}
-                placeholder="All Semesters..."
-                disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
 
@@ -909,16 +690,25 @@ export default function FeesManagementPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2 justify-end w-full md:w-auto">
-                {/* NEW: Export Button */}
+              <div className="flex gap-2 justify-end w-full md:w-auto flex-wrap">
+                {/* Export Buttons */}
                 <Button
                   variant="outline"
-                  onClick={handleExportToExcel}
+                  onClick={handleExportToCSV}
                   disabled={loading || students.length === 0}
-                  className="bg-green-500 hover:bg-green-600 text-white"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export to XL
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleExportToPDF}
+                  disabled={loading || students.length === 0}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Export PDF
                 </Button>
                 {/* Clear Button */}
                 <Button
@@ -929,7 +719,7 @@ export default function FeesManagementPage() {
                   <XCircle className="h-4 w-4 mr-2" />
                   Clear
                 </Button>
-                {/* Search Button (Triggers fetch with all filters/search) */}
+                {/* Search Button */}
                 <Button onClick={handleFilterSearch} disabled={loading}>
                   {loading ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />

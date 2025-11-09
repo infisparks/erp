@@ -21,6 +21,12 @@ import {
   TrendingUp,
   CheckSquare,
   LucideProps,
+  // --- ICONS ADDED ---
+  BookUser,
+  Building,
+  TrendingDown,
+  History,
+  // ------------------
 } from "lucide-react"
 import { ForwardRefExoticComponent, RefAttributes } from "react"
 // Assuming getSupabaseClient is in this path, adjust if necessary
@@ -30,72 +36,76 @@ import { ForwardRefExoticComponent, RefAttributes } from "react"
 // Mock Next.js Link component
 const Link = (props: any) => {
   // Filter out props that are not valid for <a> tag if necessary, e.g., 'prefetch'
-  const { href, children, ...rest } = props;
-  return <a href={href} {...rest}>{children}</a>;
-};
+  const { href, children, ...rest } = props
+  return (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  )
+}
 
 // Mock Next.js navigation hooks
 const useRouter = () => ({
   push: (path: string) => {
-    console.log(`Mock router.push to: ${path}`);
+    console.log(`Mock router.push to: ${path}`)
     // In a real mock, you might want window.location.href = path
-  }
-});
+  },
+})
 
 const usePathname = () => {
   // Return a mock pathname. Adjust if a different default is needed.
-  if (typeof window !== 'undefined') {
-    return window.location.pathname;
+  if (typeof window !== "undefined") {
+    return window.location.pathname
   }
-  return "/dashboard"; 
-};
+  return "/dashboard"
+}
 // --- END MOCKS ---
-
 
 // Mock function for environments where the import isn't available
 // In your actual app, you'd use the import above.
 const getSupabaseClient = () => {
   return {
     auth: {
-      signOut: () => new Promise<void>((resolve) => {
-        console.log("Mock SignOut");
-        setTimeout(resolve, 500);
-      }),
+      signOut: () =>
+        new Promise<void>(resolve => {
+          console.log("Mock SignOut")
+          setTimeout(resolve, 500)
+        }),
     },
   }
 }
-
 
 interface SidebarProps {
   user?: any
 }
 
 // Define type for Lucide icons
-type LucideIcon = ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>;
+type LucideIcon = ForwardRefExoticComponent<
+  Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>
+>
 
 // Type definitions for navigation items
 type NavLinkItem = {
-  type: "link";
-  icon: LucideIcon;
-  label: string;
-  href: string;
-};
+  type: "link"
+  icon: LucideIcon
+  label: string
+  href: string
+}
 
 type NavSubItem = {
-  icon: LucideIcon;
-  label: string;
-  href: string;
-};
+  icon: LucideIcon
+  label: string
+  href: string
+}
 
 type NavSectionItem = {
-  type: "section";
-  icon: LucideIcon;
-  title: string;
-  subItems: NavSubItem[];
-};
+  type: "section"
+  icon: LucideIcon
+  title: string
+  subItems: NavSubItem[]
+}
 
-type NavItem = NavLinkItem | NavSectionItem;
-
+type NavItem = NavLinkItem | NavSectionItem
 
 // New component for individual navigation links
 const NavLink = ({
@@ -211,9 +221,7 @@ export default function Sidebar({ user }: SidebarProps) {
       type: "section",
       title: "Admission",
       icon: FileText,
-      subItems: [
-        { icon: FileText, label: "Admissions", href: "/admission" },
-      ],
+      subItems: [{ icon: FileText, label: "Admissions", href: "/admission" }],
     },
     {
       type: "section",
@@ -232,10 +240,43 @@ export default function Sidebar({ user }: SidebarProps) {
       subItems: [
         { icon: BarChart3, label: "Students List", href: "/student" },
         { icon: Wallet, label: "Students fees", href: "/student/fees" },
-        { icon: TrendingUp, label: "Student Promotion", href: "/student/promotion" },
-        { icon: CheckSquare, label: "Student Status", href: "/student/status" },
+        { icon: Wallet, label: "payments", href: "/student/payment-bifurcation" },
+        {
+          icon: TrendingUp,
+          label: "Pending Registration",
+          href: "/student/registration-pending",
+        },
       ],
     },
+    // --- NEWLY ADDED TRUST MANAGEMENT SECTION ---
+    {
+      type: "section",
+      title: "Trust Management",
+      icon: BookUser, // Main icon for the section
+      subItems: [
+        {
+          icon: History,
+          label: "Trust Analytics",
+          href: "/trust-management",
+        },
+        {
+          icon: Building,
+          label: "Manage Trusts",
+          href: "/trust-management/manage",
+        },
+        {
+          icon: TrendingUp,
+          label: "Add Funds (Inflow)",
+          href: "/trust-management/inflow",
+        },
+        {
+          icon: TrendingDown,
+          label: "Assign to Student",
+          href: "/trust-management/outflow",
+        },
+      ],
+    },
+    // ---------------------------------------------
     {
       type: "link",
       icon: BookOpen,
@@ -258,7 +299,7 @@ export default function Sidebar({ user }: SidebarProps) {
 
   const isActive = (href: string) => pathname === href
   const isSectionActive = (subItems: NavSubItem[]) =>
-    subItems.some((item) => isActive(item.href))
+    subItems.some(item => isActive(item.href))
 
   return (
     <>
@@ -339,7 +380,7 @@ export default function Sidebar({ user }: SidebarProps) {
                   isOpen={isOpen}
                   isActive={active}
                 >
-                  {item.subItems.map((subItem) => (
+                  {item.subItems.map(subItem => (
                     <NavLink
                       key={subItem.href}
                       item={subItem}
