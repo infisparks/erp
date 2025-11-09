@@ -34,18 +34,19 @@ import {
   ArrowLeft,
   UserRound,
   Info, // For Inactive status
+  FileCheck, // NEW: For Undertaking button
 } from "lucide-react"
 
 // --- Type Definitions ---
 interface StudentFullDetails {
-  id: number; // Students.id (BIGINT)
+  id: number; 
   fullname: string;
   father_name: string | null;
   mother_name: string | null;
   father_email: string | null;
   mother_email: string | null;
-  correspondence_details: any; // JSONB
-  permanent_details: any; // JSONB
+  correspondence_details: any; 
+  permanent_details: any; 
   nationality: string | null;
   created_at: string; // Admission Date
   admission_type: string | null;
@@ -61,28 +62,30 @@ interface StudentFullDetails {
 }
 
 interface SemesterEnrollment {
-  semester_id: string; // UUID from semesters table
-  semester_name: string; // Name from semesters table
-  roll_number: string; // From students table
+  semester_id: string; 
+  semester_name: string; 
+  roll_number: string; 
   status: string;
 }
 
 interface AcademicYearFinancials {
-  id: number; // student_academic_years.id (BIGINT)
+  id: number; // student_academic_years.id
   academic_year_name: string;
   academic_year_session: string;
-  course_name: string; // from courses table via course_id
-  total_fee: number; // Full fee
-  scholarship_name: string | null; // Allocated scholarship name
-  scholarship_amount: number; // Allocated scholarship
-  net_payable_fee: number; // Total Fee - Scholarship
+  course_name: string; 
+  total_fee: number; 
+  scholarship_name: string | null; 
+  scholarship_amount: number; 
+  net_payable_fee: number; 
   status: string;
-  is_registered: boolean; // ✅ NEW: Added this field
+  is_registered: boolean; 
+  payment_plan: string | null; // <-- NEW
+  installment_undertaking_path: string | null; // <-- NEW
   semesters: SemesterEnrollment[];
-  payments: Payment[]; // Payments linked to this academic year ID
+  payments: Payment[]; 
   
   // Memoized fields
-  totalPaid: number; // This will now be ONLY "Tuition Fee"
+  totalPaid: number; 
   remainingDue: number;
 }
 
@@ -93,7 +96,7 @@ interface Payment {
   payment_method: string | null;
   created_at: string;
   receipt_no: number;
-  student_academic_year_id: number; // Link back to the academic year
+  student_academic_year_id: number; 
 }
 
 interface AddressDetails {
@@ -110,9 +113,6 @@ interface AddressDetails {
 // 🚀 Reusable Helper Components (Denser) 🚀
 // -------------------------------------------------------------------
 
-/**
- * Formats a date string into "DD-MMM-YYYY"
- */
 const formatDate = (dateString: string | null) => {
   if (!dateString) return "N/A";
   return new Date(dateString).toLocaleDateString('en-IN', {
@@ -122,9 +122,6 @@ const formatDate = (dateString: string | null) => {
   });
 }
 
-/**
- * Formats a number as INR currency
- */
 const formatCurrency = (amount: number | null | undefined) => {
   return (amount || 0).toLocaleString('en-IN', {
     style: 'currency',
@@ -134,27 +131,19 @@ const formatCurrency = (amount: number | null | undefined) => {
   });
 }
 
-/**
- * Displays a single piece of information in the header (Small)
- */
 const InfoItem: React.FC<{ label: string; value: string | number | null | undefined, className?: string }> = ({ label, value, className = "" }) => (
   <div className="flex flex-col">
     <span className="block text-xs font-medium text-muted-foreground uppercase leading-tight">{label}</span>
     <span className={`text-sm font-semibold leading-tight break-words ${className}`}>
-      {/* Ensure numbers are displayed as strings */}
       {value === null || value === undefined || value === "" ? "N/A" : (typeof value === 'number' ? value.toString() : value)}
     </span>
   </div>
 )
 
-/**
- * Parses and displays a JSON address string (Small)
- */
 const AddressCard: React.FC<{ title: string; detailsJson: any }> = ({ title, detailsJson }) => {
   let details: AddressDetails = {};
   let data = detailsJson;
 
-  // Attempt to parse if it's a string, otherwise assume it's already an object or null
   if (typeof detailsJson === 'string') {
     try {
       data = JSON.parse(detailsJson);
@@ -187,9 +176,6 @@ const AddressCard: React.FC<{ title: string; detailsJson: any }> = ({ title, det
   )
 }
 
-/**
- * Displays a summary row for the financial tables (Small)
- */
 const FeeSummaryRow: React.FC<{ label: string | number; value: number; isBold?: boolean; colorClass?: string }> = ({ label, value, isBold = false, colorClass = "text-foreground" }) => (
   <div className="flex justify-between items-center py-0.5">
     <span className={`text-xs ${isBold ? "font-semibold" : "text-muted-foreground"}`}>
@@ -204,19 +190,29 @@ const FeeSummaryRow: React.FC<{ label: string | number; value: number; isBold?: 
 /**
  * Renders the financial section for a single Academic Year.
  */
-const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studentId: number }> = ({ year, studentId }) => {
-  // --- UPDATED: Separate all three payment types ---
+const AcademicYearFinancialCard: React.FC<{ 
+  year: AcademicYearFinancials; 
+  studentId: number;
+  supabase: SupabaseClient; // <-- NEW: Pass supabase client
+}> = ({ year, studentId, supabase }) => {
+  
+  // --- NEW: Get Public URL for Undertaking ---
+  const undertakingUrl = useMemo(() => {
+    if (!year.installment_undertaking_path) return null
+    return supabase.storage
+      .from("student_documents") // Use your bucket name
+      .getPublicUrl(year.installment_undertaking_path).data.publicUrl
+  }, [year.installment_undertaking_path, supabase])
+  // ------------------------------------------
+
   const scholarshipPayments = year.payments.filter(p => p.fees_type === 'Scholarship');
   const tuitionFeePayments = year.payments.filter(p => p.fees_type === 'Tuition Fee');
   const otherFeePayments = year.payments.filter(p => p.fees_type !== 'Tuition Fee' && p.fees_type !== 'Scholarship');
 
-  // --- 💡 FIX: Renamed 'scholarshipUsed' to 'scholarshipReceived' for clarity ---
   const scholarshipReceived = scholarshipPayments.reduce((sum, p) => sum + p.amount, 0);
   const tuitionPaid = tuitionFeePayments.reduce((sum, p) => sum + p.amount, 0);
   const otherFeesPaid = otherFeePayments.reduce((sum, p) => sum + p.amount, 0);
-  // --- END OF UPDATE ---
-
-  // --- 💡 FIX: Updated variable name here as well ---
+  
   const remainingScholarship = year.scholarship_amount - scholarshipReceived;
 
   return (
@@ -226,7 +222,7 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
           <span>{year.academic_year_name} ({year.academic_year_session})</span>
           <span className="text-center">{formatCurrency(year.net_payable_fee)}</span>
           <span className={`text-center ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(tuitionPaid)} {/* This now correctly shows only tuition paid */}
+            {formatCurrency(tuitionPaid)}
           </span>
           <span className={`text-right ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {formatCurrency(year.remainingDue)}
@@ -241,7 +237,7 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
             <Info className="h-4 w-4" />
             <AlertTitle>Year Inactive / Completed</AlertTitle>
             <AlertDescription className="text-xs">
-              This academic year is currently marked as <strong>Inactive</strong> (e.g., completed). 
+              This academic year is currently marked as <strong>Inactive</strong>. 
               Financial amounts are shown for historical reference.
             </AlertDescription>
           </Alert>
@@ -270,6 +266,27 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
             <h4 className="font-bold text-sm border-b pb-1 text-primary">Year Summary</h4>
             <InfoItem label="Course" value={year.course_name} />
             <InfoItem label="Semesters" value={year.semesters.map(s => s.semester_name).join(', ')} />
+            
+            {/* --- NEWLY ADDED SECTION --- */}
+            <Separator className="my-1"/>
+            <InfoItem label="Payment Plan" value={year.payment_plan || 'N/A'} />
+            {year.payment_plan === 'Installment' && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                asChild 
+                className="w-full"
+                disabled={!undertakingUrl}
+              >
+                <Link href={undertakingUrl || "#"} target="_blank" rel="noopener noreferrer">
+                  <FileCheck className="h-4 w-4 mr-2" />
+                  View Undertaking
+                </Link>
+              </Button>
+            )}
+            <Separator className="my-1"/>
+            {/* --- END OF NEW SECTION --- */}
+
             <FeeSummaryRow label="Total Course Fee" value={year.total_fee} />
             <FeeSummaryRow label={`Scholarship (${year.scholarship_name || 'N/A'})`} value={year.scholarship_amount} colorClass="text-orange-600" />
             <Separator className="my-1"/>
@@ -281,13 +298,11 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
               isBold={true} 
               colorClass={year.remainingDue > 0 ? "text-destructive" : "text-green-600"}
             />
-            {/* --- NEWLY ADDED LINE --- */}
             <FeeSummaryRow label="Other Fees Paid" value={otherFeesPaid} colorClass="text-blue-600" />
             
             <Separator className="my-2"/>
             <h4 className="font-bold text-sm border-b pb-1 text-orange-600">Scholarship Ledger</h4>
             <FeeSummaryRow label="Allocated Scholarship" value={year.scholarship_amount} />
-            {/* --- 💡 FIX: Updated label from "Scholarship Used" to "Scholarship Received" --- */}
             <FeeSummaryRow label="Scholarship Received" value={scholarshipReceived} colorClass="text-green-600" />
             <FeeSummaryRow 
               label="Remaining Scholarship" 
@@ -387,7 +402,6 @@ function StudentFeeDetailPage() {
           .single();
 
         if (studentError) {
-             // Check for the specific error where no rows are returned
             if (studentError.code === 'PGRST116') {
                  throw new Error(`Student Fetch Error: No student found with ID ${numericStudentId}.`);
             }
@@ -396,12 +410,13 @@ function StudentFeeDetailPage() {
         setStudent(studentData as StudentFullDetails);
 
         // 2. Fetch all Academic Year Enrollments for the student
+        // --- UPDATED SELECT STATEMENT ---
         const { data: ayData, error: ayError } = await supabase
           .from("student_academic_years")
           .select(`
             id, academic_year_name, academic_year_session, total_fee, 
             scholarship_name, scholarship_amount, net_payable_fee, status,
-            is_registered, 
+            is_registered, payment_plan, installment_undertaking_path, 
             course:courses ( name ),
             semesters:student_semesters ( 
               status, 
@@ -410,6 +425,7 @@ function StudentFeeDetailPage() {
           `)
           .eq("student_id", numericStudentId)
           .order("academic_year_session", { ascending: true });
+        // --- END OF UPDATE ---
 
         if (ayError) throw new Error(`Academic Year Fetch Error: ${ayError.message}`);
         
@@ -434,12 +450,9 @@ function StudentFeeDetailPage() {
 
           const yearPayments = allPayments.filter(p => p.student_academic_year_id === ay.id);
           
-          // --- THIS IS THE KEY FIX ---
-          // Only count 'Tuition Fee' payments towards the 'totalPaid' and 'remainingDue'
           const tuitionPaid = yearPayments
-            .filter(p => p.fees_type === 'Tuition Fee') // <-- UPDATED FILTER
+            .filter(p => p.fees_type === 'Tuition Fee')
             .reduce((sum, p) => sum + p.amount, 0);
-          // --- END OF FIX ---
 
           const remainingDue = (ay.net_payable_fee || 0) - tuitionPaid;
 
@@ -453,11 +466,15 @@ function StudentFeeDetailPage() {
             scholarship_amount: ay.scholarship_amount || 0,
             net_payable_fee: ay.net_payable_fee || 0,
             status: ay.status,
-            is_registered: ay.is_registered ?? false, // Process the new field
+            is_registered: ay.is_registered ?? false,
             semesters,
             payments: yearPayments,
-            totalPaid: tuitionPaid, // This value is now correct
-            remainingDue: remainingDue, // This value is now correct
+            totalPaid: tuitionPaid, 
+            remainingDue: remainingDue,
+            // --- ADDED NEW FIELDS ---
+            payment_plan: ay.payment_plan,
+            installment_undertaking_path: ay.installment_undertaking_path,
+            // ------------------------
           };
           
           return year;
@@ -485,14 +502,12 @@ function StudentFeeDetailPage() {
   }, [student, supabase])
 
   // --- Total Summary Calculations ---
-  // This will now work correctly because `year.totalPaid` is correctly calculated
   const globalSummary = useMemo(() => {
-    // ✅ NEW: Filter only by years the student has actually registered for.
     const registeredYears = academicYears.filter(year => year.is_registered === true);
     
     const totalNetPayable = registeredYears.reduce((sum, year) => sum + year.net_payable_fee, 0);
-    const totalPaid = registeredYears.reduce((sum, year) => sum + year.totalPaid, 0); // This is correct
-    const totalRemaining = totalNetPayable - totalPaid; // This is correct
+    const totalPaid = registeredYears.reduce((sum, year) => sum + year.totalPaid, 0); 
+    const totalRemaining = totalNetPayable - totalPaid;
     
     return {
       totalNetPayable,
@@ -596,7 +611,6 @@ function StudentFeeDetailPage() {
         {/* --- 2. Global Financial Summary --- */}
         <div className="p-3 border bg-background rounded-lg shadow-sm">
           <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Global Financial Summary (Tuition Only)</h3>
-          {/* --- UPDATED DESCRIPTION --- */}
           <p className="text-xs text-muted-foreground -mt-2 mb-2">
             This summary only includes <strong>Registered</strong> academic years (past and present) and <strong>Tuition Fee</strong> payments.
           </p>
@@ -643,7 +657,8 @@ function StudentFeeDetailPage() {
                 <AcademicYearFinancialCard 
                   key={year.id} 
                   year={year} 
-                  studentId={student.id} // Pass studentId for the link
+                  studentId={student.id} 
+                  supabase={supabase} // <-- Pass supabase client
                 />
               ))}
             </Accordion>
@@ -662,14 +677,12 @@ function StudentFeeDetailPage() {
           <CardHeader className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <Button variant="outline" size="icon" asChild>
-                {/* Link back to the generic fees page/student list */}
                 <Link href={`/student/fees`}> 
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               </Button>
               <CardTitle className="text-xl">Student Financial Ledger</CardTitle>
             </div>
-            {/* --- FIXED TYPO --- */}
             <CardDescription className="text-sm">
               Complete financial and personal overview for <strong>{student?.fullname || 'Loading...'}</strong> (GR No: {studentId}).
             </CardDescription>
@@ -684,7 +697,6 @@ function StudentFeeDetailPage() {
 // Wrap the component in Suspense to safely use useSearchParams
 export default function StudentFeeDetailPageWrapper() {
   return (
-    // --- FIXED TYPO ---
     <Suspense fallback={<div className="flex justify-center items-center h-screen">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>}>
