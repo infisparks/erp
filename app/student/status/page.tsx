@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react" // ⬅️ ADDED Suspense
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { SupabaseClient } from "@supabase/supabase-js"
 import { useSearchParams } from 'next/navigation'; // --- NEW: To read URL parameters (Next.js specific) ---
@@ -63,9 +63,6 @@ type StudentSemesterRow = {
   } | null;
 };
 
-// --- Helper Functions ---
-// (sortByName removed as it's not needed in single-student view)
-
 // --- Avatar Component (Kept) ---
 const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, className?: string }> = ({ src, alt, supabase, className = "h-16 w-16" }) => {
   const publicUrl = useMemo(() => {
@@ -97,8 +94,10 @@ const promotionStatusOptions = [
   { label: 'Set to: Leave', value: 'Leave' },
 ];
 
-// --- Main Status Management Page (UPDATED) ---
-export default function SingleStudentStatusPage() {
+// -------------------------------------------------------------------
+// 🎯 Student Status Content Component (Renamed) 🎯
+// -------------------------------------------------------------------
+function StudentStatusContent() { // ⬅️ Renamed the component
   const supabase = getSupabaseClient();
   // --- NEW: Next.js hook to get URL parameters ---
   const searchParams = useSearchParams();
@@ -354,6 +353,25 @@ export default function SingleStudentStatusPage() {
   );
 }
 
-// NOTE: The DropdownSelect component and bulk/filter logic are no longer
-// rendered in this component but were kept in your original code.
-// I have removed them from this final code block for brevity and focus.
+
+// -------------------------------------------------------------------
+// 🎯 FINAL EXPORT WRAPPER 🎯
+// Fixes the 'useSearchParams' error by adding a Suspense boundary.
+// -------------------------------------------------------------------
+
+const StudentDetailLoading = () => (
+    <div className="p-8 flex items-center justify-center min-h-[500px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="ml-3 text-lg">Loading Student Status...</p>
+    </div>
+);
+
+// We define a new default export that wraps the content in Suspense
+// This prevents the server from attempting to resolve useSearchParams
+export default function SingleStudentStatusPage() { // ⬅️ The original default export name
+    return (
+        <Suspense fallback={<StudentDetailLoading />}>
+            <StudentStatusContent />
+        </Suspense>
+    );
+}

@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
-import { useRouter, useSearchParams } from 'next/navigation' 
+import React, { useState, useEffect, useMemo, Suspense } from "react" // ⬅️ ADDED Suspense
+import { useRouter, useSearchParams } from 'next/navigation' 
 import Link from "next/link"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { SupabaseClient } from "@supabase/supabase-js"
@@ -47,7 +47,7 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion"
-import { cn } from "@/lib/utils" 
+import { cn } from "@/lib/utils" 
 
 // --- Icons ---
 import {
@@ -84,7 +84,7 @@ interface StudentDetail {
     // From students
     id: string // This is students.id
     user_id: string
-    created_at: string 
+    created_at: string 
     firstname: string
     lastname: string
     email: string
@@ -138,7 +138,7 @@ interface StudentDetail {
     "rollNumber": string // This maps to students.roll_number
     status: string // from student_semesters (e.g., 'active')
     promotion_status: string
-    semester_id: string | null 
+    semester_id: string | null 
     student_academic_year_id: string | null // This will be the UUID from 'academic_years'
 
     // From student_academic_years (nested for editing)
@@ -151,7 +151,7 @@ interface StudentDetail {
         net_payable_fee: number | null;
     } | null;
 
-    [key: string]: any 
+    [key: string]: any 
 }
 
 interface FileToAdd {
@@ -379,8 +379,8 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ s
 // -------------------------------------------------------------------
 // 🎯 Student Detail Page Component 🎯
 // -------------------------------------------------------------------
-
-export default function StudentDetailPage() {
+// Renamed the main component to StudentDetailContent
+function StudentDetailContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const supabase = getSupabaseClient()
@@ -467,9 +467,9 @@ export default function StudentDetailPage() {
                 ] = await Promise.all([
                     supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
                     supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
-                    supabase.from("courses").select("id, name"), 
-                    supabase.from("academic_years").select("id, name, course_id"), 
-                    supabase.from("semesters").select("id, name, academic_year_id") 
+                    supabase.from("courses").select("id, name"), 
+                    supabase.from("academic_years").select("id, name, course_id"), 
+                    supabase.from("semesters").select("id, name, academic_year_id") 
                 ])
 
                 // 🚀 FIX: Set state for form_config data
@@ -532,7 +532,7 @@ export default function StudentDetailPage() {
                     "rollNumber": studentD.roll_number,
                     
                     // This is the 'academic_years.id' (UUID) for the dropdown
-                    student_academic_year_id: academicYearUUID, 
+                    student_academic_year_id: academicYearUUID, 
                     
                     // This data is just for reference/display
                     academic_year_data: {
@@ -664,7 +664,7 @@ export default function StudentDetailPage() {
 
         const currentStudentId = editFormData.id;
         const currentEnrollmentId = (editFormData as any).enrollment_id;
-        const currentStudentAcademicYearId = editFormData.academic_year_data?.id; 
+        const currentStudentAcademicYearId = editFormData.academic_year_data?.id; 
 
         if (!currentStudentId || !currentEnrollmentId || !currentStudentAcademicYearId) {
             setError("Error: Student, Enrollment, or Academic Year ID is missing. Cannot save.");
@@ -772,9 +772,9 @@ export default function StudentDetailPage() {
             const semesterUpdateData = {
                 status: editFormData.status,
                 // Pass back the other fields as they were (since they are disabled)
-                promotion_status: editFormData.promotion_status, 
+                promotion_status: editFormData.promotion_status, 
                 semester_id: editFormData.semester_id,
-                student_academic_year_id: currentStudentAcademicYearId, 
+                student_academic_year_id: currentStudentAcademicYearId, 
             };
 
             // 3. Database Transactions
@@ -1227,7 +1227,7 @@ export default function StudentDetailPage() {
                                     options={allCourseOptions}
                                     placeholder="Select course"
                                     required
-                                    disabled={true} 
+                                    disabled={true} 
                                 />
                                 <FormSearchableSelectGroup
                                     label="Academic Year"
@@ -1249,24 +1249,24 @@ export default function StudentDetailPage() {
                                 />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormSelectGroup 
-                                    label="Enrollment Status" 
-                                    name="status" 
-                                    value={editFormData.status} 
-                                    onValueChange={(val: string) => handleEditSelectChange("status", val)} 
-                                    options={statusOptions} 
-                                    placeholder="Select status" 
-                                    required 
+                                <FormSelectGroup 
+                                    label="Enrollment Status" 
+                                    name="status" 
+                                    value={editFormData.status} 
+                                    onValueChange={(val: string) => handleEditSelectChange("status", val)} 
+                                    options={statusOptions} 
+                                    placeholder="Select status" 
+                                    required 
                                 />
-                                <FormSelectGroup 
-                                    label="Promotion Status" 
-                                    name="promotion_status" 
-                                    value={editFormData.promotion_status} 
-                                    onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} 
-                                    options={promotionStatusOptions} 
-                                    placeholder="Select status" 
-                                    required 
-                                    disabled={true} 
+                                <FormSelectGroup 
+                                    label="Promotion Status" 
+                                    name="promotion_status" 
+                                    value={editFormData.promotion_status} 
+                                    onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} 
+                                    options={promotionStatusOptions} 
+                                    placeholder="Select status" 
+                                    required 
+                                    disabled={true} 
                                 />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1597,5 +1597,25 @@ export default function StudentDetailPage() {
                 </DialogContent>
             </Dialog>
         </div>
+    )
+}
+
+// -------------------------------------------------------------------
+// 🎯 FINAL EXPORT WRAPPER 🎯
+// Fixes the 'useSearchParams' error by adding a Suspense boundary.
+// -------------------------------------------------------------------
+
+const StudentDetailLoading = () => (
+    <div className="p-8 flex items-center justify-center min-h-[500px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="ml-3 text-lg">Loading...</p>
+    </div>
+);
+
+export default function StudentDetailPage() {
+    return (
+        <Suspense fallback={<StudentDetailLoading />}>
+            <StudentDetailContent />
+        </Suspense>
     )
 }

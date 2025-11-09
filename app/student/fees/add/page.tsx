@@ -59,6 +59,7 @@ import {
   ChevronDown,
   Printer,
 } from "lucide-react"
+import { Header } from '@radix-ui/react-accordion'
 
 // --- Type Definitions ---
 // --- UPDATED: Base student details ---
@@ -78,6 +79,8 @@ interface StudentAcademicYearDetails {
   net_payable_fee: number;
   total_fee: number;
   scholarship_amount: number;
+  is_registered: boolean;
+  total_tuition_paid: number; // --- ADDED: Pre-calculated sum
 }
 
 interface Payment {
@@ -214,12 +217,11 @@ function AddPaymentPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const studentId = searchParams.get('student_id')
-  // const academicYear = searchParams.get('year') // --- REMOVED ---
 
   // --- State ---
-  const [student, setStudent] = useState<StudentBaseDetails | null>(null); // --- UPDATED ---
-  const [allAcademicYears, setAllAcademicYears] = useState<StudentAcademicYearDetails[]>([]); // --- NEW ---
-  const [selectedYearData, setSelectedYearData] = useState<StudentAcademicYearDetails | null>(null); // --- NEW ---
+  const [student, setStudent] = useState<StudentBaseDetails | null>(null);
+  const [allAcademicYears, setAllAcademicYears] = useState<StudentAcademicYearDetails[]>([]);
+  const [selectedYearData, setSelectedYearData] = useState<StudentAcademicYearDetails | null>(null);
   
   const [tuitionPaid, setTuitionPaid] = useState(0);
   const [scholarshipPaid, setScholarshipPaid] = useState(0);
@@ -250,7 +252,7 @@ function AddPaymentPage() {
     notes: '',
   })
 
-  // --- Data Fetching ---
+  // --- Data Fetching (UPDATED) ---
   useEffect(() => {
     if (!studentId) {
       setError("Student ID not provided.")
@@ -267,19 +269,20 @@ function AddPaymentPage() {
       try {
         const [
           studentResult,
-          academicYearsResult, // --- NEW ---
+          academicYearsResult,
+          allPaymentsResult, // --- NEW: Fetch all payments upfront
           paymentTypesResult,
           feesTypesResult,
           bankNamesResult
         ] = await Promise.all([
-          // --- NEW: Fetch base student details ---
+          // 1. Fetch base student details
           supabase
             .from("students")
             .select("id, fullname, photo_path, roll_number")
             .eq('id', studentId)
             .single(),
           
-          // --- NEW: Fetch all academic years for this student ---
+          // 2. Fetch all academic years for this student
           supabase
             .from("student_academic_years")
             .select(`
@@ -290,12 +293,20 @@ function AddPaymentPage() {
               total_fee,
               scholarship_amount,
               net_payable_fee,
+              is_registered, 
               course:courses ( name )
             `)
             .eq('student_id', studentId)
             .order("academic_year_session", { ascending: false }),
 
-          // Fetch Form Configs
+          // 3. --- NEW: Fetch all "Tuition Fee" payments for this student
+          supabase
+            .from("student_payments")
+            .select("amount, academic_year")
+            .eq("student_id", studentId)
+            .eq("fees_type", "Tuition Fee"),
+
+          // 4. Fetch Form Configs
           supabase.from("form_config").select("data_jsonb").eq("data_name", "payment_types").single(),
           supabase.from("form_config").select("data_jsonb").eq("data_name", "fees_types").single(),
           supabase.from("form_config").select("data_jsonb").eq("data_name", "bank_names").single()
@@ -308,8 +319,20 @@ function AddPaymentPage() {
         } else {
           throw new Error("Student not found.")
         }
+
+        // --- 2. --- NEW: Process Payments into a lookup map ---
+        if (allPaymentsResult.error) throw new Error(`Payments Fetch Error: ${allPaymentsResult.error.message}`);
+        const tuitionPaidPerYear: { [key: string]: number } = {};
+        if (allPaymentsResult.data) {
+          for (const payment of allPaymentsResult.data) {
+            if (payment.academic_year) {
+              const currentPaid = tuitionPaidPerYear[payment.academic_year] || 0;
+              tuitionPaidPerYear[payment.academic_year] = currentPaid + payment.amount;
+            }
+          }
+        }
         
-        // --- 2. Process Academic Years ---
+        // --- 3. Process Academic Years (UPDATED) ---
         if (academicYearsResult.error) throw new Error(`Academic Years Fetch Error: ${academicYearsResult.error.message}`);
         if (academicYearsResult.data) {
           const yearDetails: StudentAcademicYearDetails[] = academicYearsResult.data.map((ay: any) => ({
@@ -320,11 +343,14 @@ function AddPaymentPage() {
             net_payable_fee: ay.net_payable_fee || 0,
             total_fee: ay.total_fee || 0,
             scholarship_amount: ay.scholarship_amount || 0,
+            is_registered: ay.is_registered || false,
+            // --- NEW: Add the pre-calculated sum ---
+            total_tuition_paid: tuitionPaidPerYear[ay.academic_year_session] || 0,
           }));
           setAllAcademicYears(yearDetails);
         }
 
-        // --- 3. Process Form Configs ---
+        // --- 4. Process Form Configs ---
         if (paymentTypesResult.data) setPaymentTypes(paymentTypesResult.data.data_jsonb as FormOption[])
         if (feesTypesResult.data) setFeesTypes(feesTypesResult.data.data_jsonb as FormOption[])
         if (bankNamesResult.data) setBankNames(bankNamesResult.data.data_jsonb as FormOption[])
@@ -341,7 +367,7 @@ function AddPaymentPage() {
     fetchStudentAndConfigs()
   }, [studentId, supabase])
   
-  // --- NEW: Function to fetch payments when a year is selected ---
+  // --- This function is now for the DETAILED history list and summary card ---
   const fetchPaymentHistory = async (yearSession: string) => {
     if (!studentId) return;
 
@@ -393,12 +419,12 @@ function AddPaymentPage() {
     }
   }
 
-  // --- NEW: Handler for year selection ---
+  // --- Handler for year selection ---
   const handleYearSelect = (selectedYearId: string) => {
     const yearData = allAcademicYears.find(y => y.student_academic_year_id === selectedYearId);
     if (yearData) {
       setSelectedYearData(yearData);
-      fetchPaymentHistory(yearData.academic_year); // Fetch payments for this year's session string
+      fetchPaymentHistory(yearData.academic_year); // Fetch detailed history for this year
     } else {
       setSelectedYearData(null);
       setPaymentHistory([]);
@@ -431,10 +457,10 @@ function AddPaymentPage() {
      setNewPaymentData(prev => ({ ...prev, bank_name: value || '' }));
   }
 
-  // --- Payment Submit Handler (UPDATED) ---
+  // --- Payment Submit Handler ---
   const handleAddPaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!student || !selectedYearData) { // --- UPDATED CHECK ---
+    if (!student || !selectedYearData) {
       setError("No student or academic year selected.")
       return
     }
@@ -457,9 +483,9 @@ function AddPaymentPage() {
       const { data: newPayment, error: insertError } = await supabase
         .from("student_payments")
         .insert({
-          student_id: student.id, // --- UPDATED ---
-          academic_year: selectedYearData.academic_year, // --- UPDATED ---
-          student_academic_year_id: selectedYearData.student_academic_year_id, // --- UPDATED ---
+          student_id: student.id,
+          academic_year: selectedYearData.academic_year,
+          student_academic_year_id: selectedYearData.student_academic_year_id,
           amount: amount,
           payment_method: newPaymentData.payment_method,
           fees_type: newPaymentData.fees_type,
@@ -501,22 +527,41 @@ function AddPaymentPage() {
   const paymentTypeOptions = useMemo(() => paymentTypes.map(p => ({ label: p.name, value: p.name })), [paymentTypes])
   const feesTypeOptions = useMemo(() => feesTypes.map(f => ({ label: f.name, value: f.name })), [feesTypes])
   const bankNameOptions = useMemo(() => bankNames.map(b => ({ label: b.name, value: b.name })), [bankNames])
-  // --- NEW: Options for year dropdown ---
+  
+  // --- Options for year dropdown (NOW USES PRE-CALCULATED DATA) ---
   const academicYearOptions = useMemo(() => 
-    allAcademicYears.map(ay => ({
-      label: `${ay.academic_year_name} (${ay.academic_year}) - ${ay.course_name}`,
-      value: ay.student_academic_year_id
-    })), 
-  [allAcademicYears])
+    allAcademicYears
+      .filter(ay => ay.is_registered === true)
+      .map(ay => {
+        
+        // --- THIS IS THE FIX ---
+        // Calculate remaining due from the pre-fetched data
+        const remainingDueForYear = ay.net_payable_fee - ay.total_tuition_paid;
+        
+        const dueAmount = (remainingDueForYear).toLocaleString('en-IN', { 
+          style: 'currency', 
+          currency: 'INR', 
+          minimumFractionDigits: 0 
+        });
+        
+        const labelText = remainingDueForYear > 0 ? "Remaining Due" : remainingDueForYear < 0 ? "Paid Extra" : "Cleared";
+        // --- END OF FIX ---
 
-  // --- Memoized Calculations ---
+        return {
+          label: `${ay.academic_year_name} (${ay.academic_year}) - ${ay.course_name} (${labelText}: ${dueAmount})`,
+          value: ay.student_academic_year_id
+        };
+      }), 
+  [allAcademicYears]) // <-- Dependency is now just allAcademicYears
+
+  // --- Memoized Calculations for the SUMMARY CARD (uses state) ---
   const remainingDue = useMemo(() => {
-      const totalNetPayable = selectedYearData?.net_payable_fee || 0; // --- UPDATED ---
+      const totalNetPayable = selectedYearData?.net_payable_fee || 0;
       return totalNetPayable - tuitionPaid;
   }, [selectedYearData, tuitionPaid])
   
   const remainingScholarship = useMemo(() => {
-      const totalAllocated = selectedYearData?.scholarship_amount || 0; // --- UPDATED ---
+      const totalAllocated = selectedYearData?.scholarship_amount || 0;
       return totalAllocated - scholarshipPaid;
   }, [selectedYearData, scholarshipPaid])
   
@@ -537,7 +582,7 @@ function AddPaymentPage() {
       )
     }
     
-    if (error || !student) {
+    if (error && !student) { 
       return (
          <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
@@ -550,42 +595,67 @@ function AddPaymentPage() {
     return (
       <>
         <CardContent className="pt-6 space-y-6">
-          {/* --- UPDATED: Student Info Header --- */}
-          <div className="flex items-center gap-4 p-4 bg-muted rounded-lg">
-            <Avatar className="h-16 w-16 rounded-lg">
-              <AvatarImage 
-                src={avatarUrl || undefined} 
-                alt={student.fullname || "Student Photo"} 
-                className="rounded-lg object-cover"
-              />
-              <AvatarFallback className="rounded-lg bg-background">
-                <UserRound className="h-8 w-8 text-muted-foreground" />
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="text-xl font-semibold">{student.fullname}</p>
-              <p className="text-sm text-muted-foreground">
-                Roll No: {student.roll_number}
-              </p>
+          {/* --- Student Info Header --- */}
+          {student && (
+            <div className="flex items-center gap-4 p-4 bg-muted rounded-lg">
+              <Avatar className="h-16 w-16 rounded-lg">
+                <AvatarImage 
+                  src={avatarUrl || undefined} 
+                  alt={student.fullname || "Student Photo"} 
+                  className="rounded-lg object-cover"
+                />
+                <AvatarFallback className="rounded-lg bg-background">
+                  <UserRound className="h-8 w-8 text-muted-foreground" />
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="text-xl font-semibold">{student.fullname}</p>
+                <p className="text-sm text-muted-foreground">
+                  Roll No: {student.roll_number}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
           
-          {/* --- NEW: Year Selector --- */}
-          <div className="space-y-2">
-            <Label htmlFor="academicYearSelect" className="text-lg font-semibold">Select Academic Year to Manage</Label>
-            <Select onValueChange={handleYearSelect}>
-              <SelectTrigger id="academicYearSelect">
-                <SelectValue placeholder="Select a year..." />
-              </SelectTrigger>
-              <SelectContent>
-                {academicYearOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* --- Config Error --- */}
+          {error && !loading && (
+             <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+          )}
+
+          {/* --- Year Selector --- */}
+          {!loading && academicYearOptions.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="academicYearSelect" className="text-lg font-semibold">Select Academic Year to Manage</Label>
+              <Select onValueChange={handleYearSelect} value={selectedYearData?.student_academic_year_id}>
+                <SelectTrigger id="academicYearSelect">
+                  <SelectValue placeholder="Select a year..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {academicYearOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          
+          {/* --- No Registered Years Alert --- */}
+          {!loading && academicYearOptions.length === 0 && student && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>No Registered Years</AlertTitle>
+              <AlertDescription>
+                This student has no academic years marked as 'registered'. Please register the student for an academic year to add payments.
+              </AlertDescription>
+            </Alert>
+          )}
+
 
           {/* --- Conditional Content: Show only after year is selected --- */}
           {loadingPayments && (
@@ -637,7 +707,7 @@ function AddPaymentPage() {
                 </div>
               </Collapsible>
 
-              {/* Financial Summary */}
+              {/* Financial Summary (This uses the 'tuitionPaid' state) */}
               <div className="p-4 border bg-background rounded-lg space-y-1">
                 <h4 className="text-lg font-semibold mb-2">Financial Summary for {selectedYearData.academic_year}</h4>
                 <FeeSummaryRow 
@@ -674,12 +744,15 @@ function AddPaymentPage() {
                     value={tuitionPaid}
                     colorClass="text-green-600"
                 />
+                
+                {/* --- This uses the 'remainingDue' memo, which is correct --- */}
                 <FeeSummaryRow 
-                    label="Remaining Due (Tuition)" 
+                    label={remainingDue > 0 ? "Remaining Due (Tuition)" : remainingDue < 0 ? "Paid Extra (Tuition)" : "Tuition Cleared"}
                     value={remainingDue}
                     colorClass={remainingDue > 0 ? "text-destructive" : "text-green-600"}
                     isTotal={true}
                 />
+
                 <Separator className="my-2" />
                 <FeeSummaryRow 
                     label="Paid (Other Fees)" 
@@ -822,7 +895,7 @@ function AddPaymentPage() {
                 </div>
                 
                 {/* Error message for submission */}
-                {error && (
+                {error && !isSubmitting && (
                   <Alert variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertTitle>Payment Error</AlertTitle>

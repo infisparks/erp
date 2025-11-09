@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react" // ⬅️ ADDED Suspense
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { SupabaseClient } from "@supabase/supabase-js"
 import { useSearchParams } from 'next/navigation' // Import for reading query params
@@ -147,10 +147,12 @@ const DropdownSelect: React.FC<{
 );
 
 
-// --- Main Student Promotion Page Component ---
-export default function StudentPromotionPage() {
+// -------------------------------------------------------------------
+// 🎯 Student Promotion Content Component (Renamed) 🎯
+// -------------------------------------------------------------------
+function StudentPromotionContent() {
   const supabase = getSupabaseClient();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams(); // Hook moved inside this component
   const studentId = searchParams.get('student_id');
 
   // --- Data State ---
@@ -371,6 +373,7 @@ export default function StudentPromotionPage() {
       setInitialLoading(false);
       setPageStatusMessage({ type: 'error', message: 'No student ID provided in the URL query parameter.' });
     }
+    // Dependency array updated to ensure fetchStudentDetails is called correctly
   }, [studentId, configLoading, fetchStudentDetails]);
 
 
@@ -798,7 +801,7 @@ export default function StudentPromotionPage() {
                           
                           <Button 
                             onClick={handlePromotion} 
-                            disabled={!promotionTarget || isPromoting || (promotionTarget?.isNewYear && !targetAcademicYearSession.trim())}
+                            disabled={!promotionTarget || isPromoting || (promotionTarget?.isNewYear && !targetAcademicYearSession.trim()) || activeEnrollmentStatus !== 'Eligible'}
                           >
                             {isPromoting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                             Confirm Promotion to {promotionTarget?.targetSemesterName || '...'}
@@ -918,4 +921,25 @@ export default function StudentPromotionPage() {
       </Card>
     </div>
   );
+}
+
+
+// -------------------------------------------------------------------
+// 🎯 FINAL EXPORT WRAPPER 🎯
+// Fixes the 'useSearchParams' error by adding a Suspense boundary.
+// -------------------------------------------------------------------
+
+const StudentPromotionLoading = () => (
+    <div className="p-8 flex items-center justify-center min-h-[500px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="ml-3 text-lg">Loading Student Promotion Manager...</p>
+    </div>
+);
+
+export default function StudentPromotionPage() { // ⬅️ The original default export name
+    return (
+        <Suspense fallback={<StudentPromotionLoading />}>
+            <StudentPromotionContent />
+        </Suspense>
+    );
 }

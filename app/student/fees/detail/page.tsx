@@ -82,7 +82,7 @@ interface AcademicYearFinancials {
   payments: Payment[]; // Payments linked to this academic year ID
   
   // Memoized fields
-  totalPaid: number;
+  totalPaid: number; // This will now be ONLY "Tuition Fee"
   remainingDue: number;
 }
 
@@ -205,11 +205,15 @@ const FeeSummaryRow: React.FC<{ label: string | number; value: number; isBold?: 
  * Renders the financial section for a single Academic Year.
  */
 const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studentId: number }> = ({ year, studentId }) => {
-  // Separate tuition/fees from scholarship payments (if needed)
-  const feePayments = year.payments.filter(p => p.fees_type !== 'Scholarship');
+  // --- UPDATED: Separate all three payment types ---
   const scholarshipPayments = year.payments.filter(p => p.fees_type === 'Scholarship');
+  const tuitionFeePayments = year.payments.filter(p => p.fees_type === 'Tuition Fee');
+  const otherFeePayments = year.payments.filter(p => p.fees_type !== 'Tuition Fee' && p.fees_type !== 'Scholarship');
+
   const scholarshipUsed = scholarshipPayments.reduce((sum, p) => sum + p.amount, 0);
-  const tuitionPaid = feePayments.reduce((sum, p) => sum + p.amount, 0);
+  const tuitionPaid = tuitionFeePayments.reduce((sum, p) => sum + p.amount, 0);
+  const otherFeesPaid = otherFeePayments.reduce((sum, p) => sum + p.amount, 0);
+  // --- END OF UPDATE ---
 
   const remainingScholarship = year.scholarship_amount - scholarshipUsed;
 
@@ -220,7 +224,7 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
           <span>{year.academic_year_name} ({year.academic_year_session})</span>
           <span className="text-center">{formatCurrency(year.net_payable_fee)}</span>
           <span className={`text-center ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(tuitionPaid)}
+            {formatCurrency(tuitionPaid)} {/* This now correctly shows only tuition paid */}
           </span>
           <span className={`text-right ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {formatCurrency(year.remainingDue)}
@@ -229,15 +233,14 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
       </AccordionTrigger>
       <AccordionContent className="p-4 border border-t-0 rounded-b-lg">
         
-        {/* --- ✅ NEW: Conditional Warnings --- */}
+        {/* --- Conditional Warnings --- */}
         {year.status === 'Inactive' && (
           <Alert variant="default" className="mb-4 bg-gray-100 border-gray-300">
             <Info className="h-4 w-4" />
-            <AlertTitle>Year Inactive</AlertTitle>
+            <AlertTitle>Year Inactive / Completed</AlertTitle>
             <AlertDescription className="text-xs">
-              This academic year is currently marked as <strong>Inactive</strong>. 
-              Financial amounts for this year are excluded from the global summary, 
-              and ledger details are shown for historical reference.
+              This academic year is currently marked as <strong>Inactive</strong> (e.g., completed). 
+              Financial amounts are shown for historical reference.
             </AlertDescription>
           </Alert>
         )}
@@ -248,7 +251,7 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
             <AlertTitle>Registration Pending</AlertTitle>
             <AlertDescription className="text-xs">
               Registration for this academic year is <strong>pending</strong>. 
-              Please complete registration to activate financial services.
+              Financials for this year are not yet included in the global summary.
               <Button variant="link" asChild className="p-0 h-auto ml-1 text-xs">
                 <Link href={`/student/registration?student_id=${studentId}`}>
                   Complete Registration Now
@@ -268,14 +271,16 @@ const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studen
             <FeeSummaryRow label="Total Course Fee" value={year.total_fee} />
             <FeeSummaryRow label={`Scholarship (${year.scholarship_name || 'N/A'})`} value={year.scholarship_amount} colorClass="text-orange-600" />
             <Separator className="my-1"/>
-            <FeeSummaryRow label="Net Payable Fee" value={year.net_payable_fee} isBold={true} colorClass="text-primary" />
-            <FeeSummaryRow label="Total Paid" value={tuitionPaid} isBold={true} colorClass="text-green-600" />
+            <FeeSummaryRow label="Net Payable (Tuition)" value={year.net_payable_fee} isBold={true} colorClass="text-primary" />
+            <FeeSummaryRow label="Paid (Tuition)" value={tuitionPaid} isBold={true} colorClass="text-green-600" />
             <FeeSummaryRow 
-              label="Remaining Due" 
+              label="Remaining Due (Tuition)" 
               value={year.remainingDue} 
               isBold={true} 
               colorClass={year.remainingDue > 0 ? "text-destructive" : "text-green-600"}
             />
+            {/* --- NEWLY ADDED LINE --- */}
+            <FeeSummaryRow label="Other Fees Paid" value={otherFeesPaid} colorClass="text-blue-600" />
             
             <Separator className="my-2"/>
             <h4 className="font-bold text-sm border-b pb-1 text-orange-600">Scholarship Ledger</h4>
@@ -426,9 +431,12 @@ function StudentFeeDetailPage() {
 
           const yearPayments = allPayments.filter(p => p.student_academic_year_id === ay.id);
           
+          // --- THIS IS THE KEY FIX ---
+          // Only count 'Tuition Fee' payments towards the 'totalPaid' and 'remainingDue'
           const tuitionPaid = yearPayments
-            .filter(p => p.fees_type !== 'Scholarship') 
+            .filter(p => p.fees_type === 'Tuition Fee') // <-- UPDATED FILTER
             .reduce((sum, p) => sum + p.amount, 0);
+          // --- END OF FIX ---
 
           const remainingDue = (ay.net_payable_fee || 0) - tuitionPaid;
 
@@ -442,11 +450,11 @@ function StudentFeeDetailPage() {
             scholarship_amount: ay.scholarship_amount || 0,
             net_payable_fee: ay.net_payable_fee || 0,
             status: ay.status,
-            is_registered: ay.is_registered ?? false, // ✅ Process the new field
+            is_registered: ay.is_registered ?? false, // Process the new field
             semesters,
             payments: yearPayments,
-            totalPaid: tuitionPaid,
-            remainingDue: remainingDue,
+            totalPaid: tuitionPaid, // This value is now correct
+            remainingDue: remainingDue, // This value is now correct
           };
           
           return year;
@@ -474,19 +482,20 @@ function StudentFeeDetailPage() {
   }, [student, supabase])
 
   // --- Total Summary Calculations ---
+  // This will now work correctly because `year.totalPaid` is correctly calculated
   const globalSummary = useMemo(() => {
-    // ✅ NEW: Filter out inactive years from global summary
-    const activeYears = academicYears.filter(year => year.status !== 'Inactive');
+    // ✅ NEW: Filter only by years the student has actually registered for.
+    const registeredYears = academicYears.filter(year => year.is_registered === true);
     
-    const totalNetPayable = activeYears.reduce((sum, year) => sum + year.net_payable_fee, 0);
-    const totalPaid = activeYears.reduce((sum, year) => sum + year.totalPaid, 0);
-    const totalRemaining = totalNetPayable - totalPaid;
+    const totalNetPayable = registeredYears.reduce((sum, year) => sum + year.net_payable_fee, 0);
+    const totalPaid = registeredYears.reduce((sum, year) => sum + year.totalPaid, 0); // This is correct
+    const totalRemaining = totalNetPayable - totalPaid; // This is correct
     
     return {
       totalNetPayable,
       totalPaid,
       totalRemaining,
-      totalScholarship: activeYears.reduce((sum, year) => sum + year.scholarship_amount, 0),
+      totalScholarship: registeredYears.reduce((sum, year) => sum + year.scholarship_amount, 0),
     };
   }, [academicYears]);
 
@@ -583,9 +592,10 @@ function StudentFeeDetailPage() {
         
         {/* --- 2. Global Financial Summary --- */}
         <div className="p-3 border bg-background rounded-lg shadow-sm">
-          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Global Financial Summary</h3>
+          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Global Financial Summary (Tuition Only)</h3>
+          {/* --- UPDATED DESCRIPTION --- */}
           <p className="text-xs text-muted-foreground -mt-2 mb-2">
-            This summary only includes amounts from <strong>Active</strong> academic years.
+            This summary only includes <strong>Registered</strong> academic years (past and present) and <strong>Tuition Fee</strong> payments.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-2 bg-muted rounded-md">
             <InfoItem 
@@ -593,7 +603,7 @@ function StudentFeeDetailPage() {
               value={formatCurrency(globalSummary.totalNetPayable)} 
             />
             <InfoItem 
-              label="Total Paid" 
+              label="Total Paid (Tuition)" 
               value={formatCurrency(globalSummary.totalPaid)} 
             />
             <InfoItem 
@@ -601,7 +611,7 @@ function StudentFeeDetailPage() {
               value={formatCurrency(globalSummary.totalScholarship)} 
             />
             <InfoItem 
-              label="Remaining Due" 
+              label="Remaining Due (Tuition)" 
               value={formatCurrency(globalSummary.totalRemaining)} 
               className={`font-extrabold text-xl ${globalSummary.totalRemaining > 0 ? 'text-destructive' : 'text-green-600'}`}
             />
@@ -616,7 +626,7 @@ function StudentFeeDetailPage() {
           <div className="mb-2 grid grid-cols-4 w-full font-semibold text-sm text-muted-foreground border-b pb-1 px-4">
               <span>Academic Year / Course</span>
               <span className="text-center">Net Fee</span>
-              <span className="text-center">Paid</span>
+              <span className="text-center">Paid (Tuition)</span>
               <span className="text-right">Remaining</span>
           </div>
           
@@ -630,7 +640,7 @@ function StudentFeeDetailPage() {
                 <AcademicYearFinancialCard 
                   key={year.id} 
                   year={year} 
-                  studentId={student.id} // ✅ Pass studentId for the link
+                  studentId={student.id} // Pass studentId for the link
                 />
               ))}
             </Accordion>
@@ -656,8 +666,9 @@ function StudentFeeDetailPage() {
               </Button>
               <CardTitle className="text-xl">Student Financial Ledger</CardTitle>
             </div>
+            {/* --- FIXED TYPO --- */}
             <CardDescription className="text-sm">
-              Complete financial and personal overview for **{student?.fullname || 'Loading...'}** (GR No: {studentId}).
+              Complete financial and personal overview for <strong>{student?.fullname || 'Loading...'}</strong> (GR No: {studentId}).
             </CardDescription>
           </CardHeader>
           {renderContent()}
@@ -670,6 +681,7 @@ function StudentFeeDetailPage() {
 // Wrap the component in Suspense to safely use useSearchParams
 export default function StudentFeeDetailPageWrapper() {
   return (
+    // --- FIXED TYPO ---
     <Suspense fallback={<div className="flex justify-center items-center h-screen">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>}>
