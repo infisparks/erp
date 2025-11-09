@@ -3,37 +3,18 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { SupabaseClient } from "@supabase/supabase-js"
-import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  useReactTable,
-  ColumnFiltersState,
-  SortingState,
-  getSortedRowModel,
-} from "@tanstack/react-table"
+import { useSearchParams } from 'next/navigation' // Import for reading query params
 
 // --- ShadCN UI Components ---
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 
 // --- Icons ---
 import {
@@ -41,16 +22,12 @@ import {
   AlertTriangle,
   Send,
   GitBranch,
-  Search,
   UserRound,
-  GraduationCap,
   History,
   ChevronsRight,
+  GraduationCap,
   ShieldCheck,
   ShieldAlert,
-  Users,
-  XCircle,
-  ArrowUpDown,
 } from "lucide-react"
 
 // --- PrimeReact Components ---
@@ -62,29 +39,12 @@ interface Course { id: string; name: string; stream_id: string; }
 interface AcademicYear { id: string; name: string; course_id: string; }
 interface Semester { id: string; name: string; academic_year_id: string; }
 
-// --- UPDATED: Student for main list (from fees page) ---
-interface StudentList { 
-    enrollment_id: string;      // student_semesters.id
-    student_id: string;         // students.id
-    academic_year_id: string; // student_academic_years.id
-    fullname: string | null;
-    email: string | null;
-    roll_number: string | null;
-    photo_path: string | null;
-    course_name: string;
-    academic_year_name: string;
-    academic_year_session: string;
-    semester_name: string;
-    status: string;             // from student_semesters
-    promotion_status: string;   // from student_semesters
-}
-
 // --- Detailed student type for modal ---
 interface StudentDetails {
   id: string;
   fullname: string | null;
   photo_path: string | null;
-  roll_number: string | null; // --- ADDED ---
+  roll_number: string | null;
   academic_years: StudentAcademicYearWithSemesters[];
   active_enrollment: {
     student_id: string;
@@ -108,7 +68,6 @@ interface StudentAcademicYearWithSemesters extends Omit<StudentAcademicYear, 'st
 }
 interface StudentAcademicYear { id: string; student_id: string; course_id: string; academic_year_name: string; academic_year_session: string; status: string; }
 interface StudentSemester { id: string; student_id: string; semester_id: string; student_academic_year_id: string; status: string; promotion_status: string; }
-
 
 interface PromotionTarget {
   targetSemesterId: string;
@@ -162,33 +121,54 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase
   )
 }
 
-// --- Main Promotion Page ---
-export default function PromotionPage() {
+// --- Helper Dropdown Component ---
+const DropdownSelect: React.FC<{
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  options: { id: string; name: string }[];
+  placeholder: string;
+  disabled?: boolean;
+}> = ({ label, value, onChange, options, placeholder, disabled = false }) => (
+  <div className="space-y-1">
+    <Label className="font-semibold">{label}</Label>
+    <Dropdown
+      value={value}
+      options={options}
+      onChange={(e) => onChange(e.value)}
+      optionLabel="name"
+      optionValue="id"
+      placeholder={placeholder}
+      className="w-full"
+      filter
+      disabled={disabled}
+    />
+  </div>
+);
+
+
+// --- Main Student Promotion Page Component ---
+export default function StudentPromotionPage() {
   const supabase = getSupabaseClient();
-  
+  const searchParams = useSearchParams();
+  const studentId = searchParams.get('student_id');
+
   // --- Data State ---
   const [allStreams, setAllStreams] = useState<Stream[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([]);
   const [allSemesters, setAllSemesters] = useState<Semester[]>([]);
-  
-  // --- Main List State ---
-  const [students, setStudents] = useState<StudentList[]>([]); // --- UPDATED ---
-  const [studentSearch, setStudentSearch] = useState("");
-  const [rollNumberSearch, setRollNumberSearch] = useState("");
-  const [loading, setLoading] = useState(false); // Don't load by default
-  const [loadingFilters, setLoadingFilters] = useState(true);
 
-  // --- Modal State ---
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalLoading, setModalLoading] = useState(false);
+  // --- Student & Loading State ---
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [configLoading, setConfigLoading] = useState(true);
   const [selectedStudentDetails, setSelectedStudentDetails] = useState<StudentDetails | null>(null);
-  
+
   // --- Promotion State ---
   const [promotionTarget, setPromotionTarget] = useState<PromotionTarget | null>(null);
   const [targetAcademicYearSession, setTargetAcademicYearSession] = useState("");
   const [isPromoting, setIsPromoting] = useState(false);
-  
+
   // --- Branch Transfer State ---
   const [transferStreamId, setTransferStreamId] = useState<string | null>(null);
   const [transferCourseId, setTransferCourseId] = useState<string | null>(null);
@@ -197,68 +177,30 @@ export default function PromotionPage() {
   const [transferSession, setTransferSession] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
 
-  // --- Status State ---
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const [modalStatusMessage, setModalStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // --- Filter States ---
-  const [selectedStream, setSelectedStream] = useState<string | null>(null)
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string | null>(null); 
-  const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
-
-  // --- Table State ---
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState("")
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: "fullname", desc: false },
-  ])
-
-  // --- Derived Filters for Search ---
-  const streamOptions = useMemo(() => 
-    allStreams.sort(robustSortByName), 
-    [allStreams]
-  );
+  // --- Status State (for the page) ---
+  const [pageStatusMessage, setPageStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   
-  const courseOptions = useMemo(() => {
-    if (!selectedStream) return []
-    return allCourses
-      .filter(c => c.stream_id === selectedStream)
-      .sort(robustSortByName)
-  }, [allCourses, selectedStream])
+  // Reset transfer fields when course changes
+  const handleTransferStreamChange = (value: string | null) => {
+    setTransferStreamId(value);
+    setTransferCourseId(null);
+    setTransferAcademicYearId(null);
+    setTransferSemesterId(null);
+  };
 
-  const academicYearOptions = useMemo(() => {
-    if (!selectedCourse) return [];
-    return allAcademicYears
-      .filter(ay => ay.course_id === selectedCourse)
-      .sort(robustSortByName);
-  }, [allAcademicYears, selectedCourse]);
+  const handleTransferCourseChange = (value: string | null) => {
+    setTransferCourseId(value);
+    setTransferAcademicYearId(null);
+    setTransferSemesterId(null);
+  };
 
-  const semesterOptions = useMemo(() => {
-    if (!selectedAcademicYear) return [];
-    return allSemesters
-      .filter(s => s.academic_year_id === selectedAcademicYear)
-      .sort(robustSortByName);
-  }, [allSemesters, selectedAcademicYear]);
-
-
-  // --- Derived Filters for Transfer Dropdowns ---
-  const transferCourseOptions = useMemo(() => 
-    allCourses.filter(c => c.stream_id === transferStreamId).sort(robustSortByName), 
-    [allCourses, transferStreamId]
-  );
-  const transferAcademicYearOptions = useMemo(() => 
-    allAcademicYears.filter(ay => ay.course_id === transferCourseId).sort(robustSortByName), 
-    [allAcademicYears, transferCourseId]
-  );
-  const transferSemesterOptions = useMemo(() => 
-    allSemesters.filter(s => s.academic_year_id === transferAcademicYearId).sort(robustSortByName), 
-    [allSemesters, transferAcademicYearId]
-  );
+  const handleTransferAcademicYearChange = (value: string | null) => {
+    setTransferAcademicYearId(value);
+    setTransferSemesterId(null);
+  };
 
   // --- Logic to find the next semester/year (for modal) ---
-  const findPromotionTarget = (activeEnrollment: StudentDetails['active_enrollment']) => {
+  const findPromotionTarget = useCallback((activeEnrollment: StudentDetails['active_enrollment']) => {
     if (!activeEnrollment) {
       setPromotionTarget(null);
       return;
@@ -276,6 +218,7 @@ export default function PromotionPage() {
     
     const currentSemIndex = semestersInSourceYear.findIndex(s => s.id === sourceSemester.id);
 
+    // Intra-year promotion
     if (currentSemIndex < semestersInSourceYear.length - 1) {
       const targetSemester = semestersInSourceYear[currentSemIndex + 1];
       setPromotionTarget({
@@ -288,6 +231,7 @@ export default function PromotionPage() {
       return;
     }
 
+    // Inter-year promotion
     const academicYearsInCourse = allAcademicYears
       .filter(ay => ay.course_id === activeEnrollment.course_id)
       .sort(robustSortByName);
@@ -299,7 +243,7 @@ export default function PromotionPage() {
       
       const targetSemester = allSemesters
         .filter(s => s.academic_year_id === targetAcademicYear.id)
-        .sort(robustSortByName)[0];
+        .sort(robustSortByName)[0]; // First semester of the next year
 
       if (targetSemester) {
         setPromotionTarget({
@@ -313,211 +257,24 @@ export default function PromotionPage() {
       }
     }
     setPromotionTarget(null); // End of course
-  };
+  }, [allAcademicYears, allSemesters]);
 
 
-  // --- Data Fetching: Main Student List ---
-  const fetchStudents = useCallback(async (nameQuery: string, rollQuery: string) => {
-    if (!nameQuery && !rollQuery && !selectedSemester && !selectedAcademicYear && !selectedCourse && !selectedStream) {
-      setStatusMessage({ type: 'error', message: 'Please enter a search term or apply a filter to find students.' });
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
-    
-    setLoading(true);
-    setStatusMessage(null);
-    setError(null);
-    
-    try {
-      let query = supabase
-        .from("student_semesters")
-        .select(
-          `
-          id, 
-          status,
-          promotion_status,
-          student_academic_year_id,
-          student:students (
-            id,
-            fullname,
-            email,
-            photo_path,
-            roll_number
-          ),
-          semester:semesters ( name ),
-          academic_year:student_academic_years (
-            id,
-            academic_year_name,
-            academic_year_session,
-            course_id,
-            course:courses ( 
-              stream_id 
-            )
-          )
-          `
-        )
-        .eq('status', 'active');
+  // --- Fetch Student Details Function ---
+  const fetchStudentDetails = useCallback(async (id: string) => {
+    if (configLoading) return; // Wait for config data to load
 
-      // --- NEW Filter Logic ---
-      
-      if (selectedSemester) {
-        query = query.eq("semester_id", selectedSemester);
-      } 
-      else if (selectedAcademicYear) {
-        const yearName = allAcademicYears.find(ay => ay.id === selectedAcademicYear)?.name;
-        if (yearName) {
-            const { data: ayIds, error } = await supabase
-              .from("student_academic_years")
-              .select("id")
-              .eq("academic_year_name", yearName)
-              .eq("course_id", selectedCourse); // Needs course context
-            if (error) throw error;
-            
-            const matchingIds = ayIds.map((ay: { id: string }) => ay.id);
-            if (matchingIds.length === 0) {
-              query = query.eq("student_academic_year_id", 0);
-            } else {
-              query = query.in("student_academic_year_id", matchingIds);
-            }
-        } else {
-          query = query.eq("student_academic_year_id", 0);
-        }
-      }
-      else if (selectedCourse) {
-          query = query.eq('academic_year:student_academic_years.course_id', selectedCourse);
-      }
-      else if (selectedStream) {
-          query = query.eq('academic_year:student_academic_years.course:courses.stream_id', selectedStream);
-      }
-
-      if (nameQuery) {
-        query = query.ilike('student:students.fullname', `%${nameQuery}%`);
-      }
-      if (rollQuery) {
-        query = query.ilike('student:students.roll_number', `%${rollQuery}%`);
-      }
-
-      const { data, error } = await query.order("created_at", { ascending: false });
-      if (error) throw error;
-      
-      if (data) {
-        const flattenedData: StudentList[] = data.map((item: any) => {
-          if (!item.student || !item.academic_year || !item.semester) return null; 
-          
-          return {
-            enrollment_id: item.id,
-            student_id: item.student.id,
-            academic_year_id: item.student_academic_year_id,
-            fullname: item.student.fullname,
-            email: item.student.email,
-            roll_number: item.student.roll_number,
-            photo_path: item.student.photo_path,
-            course_name: item.academic_year?.course?.name || "N/A",
-            academic_year_name: item.academic_year?.academic_year_name || "N/A",
-            academic_year_session: item.academic_year?.academic_year_session || "N/A",
-            semester_name: item.semester?.name || "N/A",
-            status: item.status,
-            promotion_status: item.promotion_status,
-          }
-        }).filter((s): s is StudentList => s !== null);
-
-        setStudents(flattenedData);
-        if (flattenedData.length === 0) {
-          setStatusMessage({ type: 'error', message: 'No students found matching your criteria.' });
-        }
-      }
-    } catch (err: any) {
-      console.error("Error fetching students:", err)
-      setStatusMessage({ type: 'error', message: `Student Load Error: ${err.message}` });
-    } finally {
-      setLoading(false)
-    }
-  }, [supabase, selectedStream, selectedCourse, selectedAcademicYear, selectedSemester, allAcademicYears]);
-  
-  // --- Initial Config Fetch (Streams, Courses, etc.) ---
-  useEffect(() => {
-    const fetchConfig = async () => {
-      setLoadingFilters(true);
-      try {
-        const [streamsRes, coursesRes, ayRes, semestersRes] = await Promise.all([
-          supabase.from("streams").select("id, name").order("name"),
-          supabase.from("courses").select("id, name, stream_id").order("name"),
-          supabase.from("academic_years").select("id, name, course_id").order("name"),
-          supabase.from("semesters").select("id, name, academic_year_id").order("name"),
-        ]);
-        
-        if (streamsRes.data) setAllStreams(streamsRes.data);
-        if (coursesRes.data) setAllCourses(coursesRes.data);
-        if (ayRes.data) setAllAcademicYears(ayRes.data);
-        if (semestersRes.data) setAllSemesters(semestersRes.data);
-
-      } catch (err: any) {
-        setStatusMessage({ type: 'error', message: `Config Error: ${err.message}` });
-      } finally {
-        setLoadingFilters(false);
-        setLoading(false);
-      }
-    };
-    fetchConfig();
-  }, [supabase]);
-
-
-  // --- NEW: Button click handlers ---
-  const handleSearchClick = () => {
-    fetchStudents(studentSearch, rollNumberSearch);
-  }
-
-  const handleClearClick = () => {
-    setStudentSearch("");
-    setRollNumberSearch("");
-    setSelectedStream(null);
-    setSelectedCourse(null);
-    setSelectedAcademicYear(null);
-    setSelectedSemester(null);
-    setStudents([]);
-    setLoading(false);
-    setStatusMessage(null);
-  }
-
-  // --- Filter Handlers ---
-  const handleStreamChange = (value: string | null) => {
-    setSelectedStream(value);
-    setSelectedCourse(null);
-    setSelectedAcademicYear(null);
-    setSelectedSemester(null);
-  };
-
-  const handleCourseChange = (value: string | null) => {
-    setSelectedCourse(value);
-    setSelectedAcademicYear(null);
-    setSelectedSemester(null);
-  };
-
-  const handleAcademicYearChange = (value: string | null) => {
-    setSelectedAcademicYear(value);
-    setSelectedSemester(null);
-  };
-
-  const handleSemesterChange = (value: string | null) => {
-    setSelectedSemester(value);
-  };
-
-
-  // --- NEW: Open Modal and Fetch Details ---
-  const openStudentModal = useCallback(async (studentId: string) => {
-    setIsModalOpen(true);
-    setModalLoading(true);
-    setModalStatusMessage(null);
+    setInitialLoading(true);
+    setPageStatusMessage(null);
     setSelectedStudentDetails(null);
     setPromotionTarget(null);
-    
+
     try {
       // 1. Fetch Student's base data
       const { data: studentData, error: studentError } = await supabase
         .from("students")
         .select("id, fullname, photo_path, roll_number")
-        .eq("id", studentId)
+        .eq("id", id)
         .single();
         
       if (studentError) throw studentError;
@@ -533,7 +290,7 @@ export default function PromotionPage() {
             semesters ( name )
           )
         `)
-        .eq("student_id", studentId)
+        .eq("student_id", id)
         .order("academic_year_name", { ascending: true, nullsFirst: false });
         
       if (yearsError) throw yearsError;
@@ -546,7 +303,7 @@ export default function PromotionPage() {
         { name: b.academic_year_name }
       ));
 
-      // 3. Find the *one* active enrollment to determine promotion target
+      // 3. Find the *one* active enrollment
       let active_enrollment: StudentDetails['active_enrollment'] = null;
       for (const year of academic_years) {
         if (year.status === 'Active') {
@@ -567,35 +324,99 @@ export default function PromotionPage() {
       }
 
       // 4. Set state and find promotion target
-      setSelectedStudentDetails({ ...studentData, academic_years, active_enrollment });
+      const details: StudentDetails = { ...studentData, academic_years, active_enrollment };
+      setSelectedStudentDetails(details);
       findPromotionTarget(active_enrollment);
       
     } catch (err: any) {
-      setModalStatusMessage({ type: 'error', message: `Failed to load student details: ${err.message}` });
+      console.error("Error fetching student details:", err);
+      setPageStatusMessage({ type: 'error', message: `Failed to load student details: ${err.message}` });
     } finally {
-      setModalLoading(false);
+      setInitialLoading(false);
     }
-  }, [supabase, allAcademicYears, allSemesters]);
+  }, [supabase, configLoading, findPromotionTarget]);
 
 
-  // --- Promotion Logic (for Modal) ---
+  // --- Initial Config Fetch (Streams, Courses, etc.) ---
+  useEffect(() => {
+    const fetchConfig = async () => {
+      setConfigLoading(true);
+      try {
+        const [streamsRes, coursesRes, ayRes, semestersRes] = await Promise.all([
+          supabase.from("streams").select("id, name").order("name"),
+          supabase.from("courses").select("id, name, stream_id").order("name"),
+          supabase.from("academic_years").select("id, name, course_id").order("name"),
+          supabase.from("semesters").select("id, name, academic_year_id").order("name"),
+        ]);
+        
+        if (streamsRes.data) setAllStreams(streamsRes.data);
+        if (coursesRes.data) setAllCourses(coursesRes.data);
+        if (ayRes.data) setAllAcademicYears(ayRes.data);
+        if (semestersRes.data) setAllSemesters(semestersRes.data);
+
+      } catch (err: any) {
+        setPageStatusMessage({ type: 'error', message: `Config Error: ${err.message}` });
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+    fetchConfig();
+  }, [supabase]);
+
+  // --- Effect to fetch student details once config and studentId are ready ---
+  useEffect(() => {
+    if (studentId && !configLoading) {
+      fetchStudentDetails(studentId);
+    } else if (!studentId && !configLoading) {
+      setInitialLoading(false);
+      setPageStatusMessage({ type: 'error', message: 'No student ID provided in the URL query parameter.' });
+    }
+  }, [studentId, configLoading, fetchStudentDetails]);
+
+
+  // --- Promotion Logic (UPDATED with Status Check) ---
   const handlePromotion = async () => {
     if (!promotionTarget || !selectedStudentDetails || !selectedStudentDetails.active_enrollment) {
-      setModalStatusMessage({ type: 'error', message: 'No student or promotion target selected.' });
+      setPageStatusMessage({ type: 'error', message: 'No student or promotion target selected.' });
       return;
     }
     
     const { active_enrollment } = selectedStudentDetails;
 
     if (promotionTarget.isNewYear && !targetAcademicYearSession.trim()) {
-      setModalStatusMessage({ type: 'error', message: 'Please enter a "Target Session" (e.g., 2025-2026) for the new academic year.' });
+      setPageStatusMessage({ type: 'error', message: 'Please enter a "Target Session" (e.g., 2025-2026) for the new academic year.' });
       return;
     }
 
     setIsPromoting(true); 
-    setModalStatusMessage(null);
+    setPageStatusMessage(null);
 
     try {
+        // --- NEW VALIDATION STEP: Check Current Promotion Status ---
+        const { data: currentSemData, error: statusError } = await supabase
+            .from("student_semesters")
+            .select("promotion_status")
+            .eq('student_id', active_enrollment.student_id)
+            .eq('semester_id', active_enrollment.semester_id)
+            .eq('status', 'active')
+            .single();
+
+        if (statusError || !currentSemData) {
+            throw new Error("Could not retrieve current semester status.");
+        }
+        
+        // Block promotion if status is NOT 'Eligible'
+        if (currentSemData.promotion_status !== 'Eligible') {
+            setPageStatusMessage({ 
+                type: 'error', 
+                message: `Promotion blocked: Student's current status is "${currentSemData.promotion_status}". Only students with status 'Eligible' can be promoted.` 
+            });
+            setIsPromoting(false);
+            return; // EXIT FUNCTION
+        }
+        // --- END NEW VALIDATION STEP ---
+
+
       // --- Case 1: INTRA-YEAR Promotion (e.g., Sem 1 -> Sem 2) ---
       if (!promotionTarget.isNewYear) {
         const newSemesterEnrollment = {
@@ -631,6 +452,7 @@ export default function PromotionPage() {
           
         if (feeError) throw new Error(`Fee Fetch Error: ${feeError.message}`);
         
+        // Find the 'Open' category fee for the new course or default to current year's total fee
         const openFee = feeData?.find((f: { category_name: string, amount: number }) => f.category_name === 'Open')?.amount || currentAcademicYear.total_fee || 0;
         
         const newAcademicYearRecord = {
@@ -658,7 +480,7 @@ export default function PromotionPage() {
             semester_id: promotionTarget.targetSemesterId,
             student_academic_year_id: createdYearData.id,
             status: 'active',
-            promotion_status: 'Eligible'
+            promotion_status: 'Eligible' // New semester defaults to Eligible
         };
 
         const { error: insertError } = await supabase
@@ -667,12 +489,14 @@ export default function PromotionPage() {
           
         if (insertError) throw new Error(`Semester Insert Error: ${insertError.message}`);
 
+        // Mark the old academic year as Inactive
         await supabase
           .from("student_academic_years")
           .update({ status: 'Inactive' })
           .eq('id', active_enrollment.student_academic_year_id);
       }
 
+      // Deactivate old semester and set its final promotion status to 'Promoted'
       const { error: updateError } = await supabase
         .from("student_semesters")
         .update({ status: 'inactive', promotion_status: 'Promoted' })
@@ -681,41 +505,40 @@ export default function PromotionPage() {
 
       if (updateError) throw new Error(`Old Semester Update Error: ${updateError.message}`);
 
-      setModalStatusMessage({ type: 'success', message: `Student promoted to ${promotionTarget.targetSemesterName} successfully!` });
+      setPageStatusMessage({ type: 'success', message: `Student promoted to ${promotionTarget.targetSemesterName} successfully!` });
       setTargetAcademicYearSession("");
       
-      await openStudentModal(active_enrollment.student_id);
-      // Refresh the main list as well
-      await fetchStudents(studentSearch, rollNumberSearch);
+      // Refresh the details in place
+      fetchStudentDetails(active_enrollment.student_id); 
 
     } catch (err: any) {
-      setModalStatusMessage({ type: 'error', message: `Promotion Failed: ${err.message}` });
+      setPageStatusMessage({ type: 'error', message: `Promotion Failed: ${err.message}` });
     } finally {
       setIsPromoting(false);
     }
   };
 
 
-  // --- Branch Transfer Logic (for Modal) ---
+  // --- Branch Transfer Logic ---
   const handleBranchTransfer = async () => {
     if (!selectedStudentDetails || !selectedStudentDetails.active_enrollment || !transferCourseId || !transferSemesterId) {
-      setModalStatusMessage({ type: 'error', message: 'Please select a new course, year, semester, and session.' });
+      setPageStatusMessage({ type: 'error', message: 'Please select a new course, year, semester, and session.' });
       return;
     }
     if (!transferSession.trim()) {
-      setModalStatusMessage({ type: 'error', message: 'A Target Session (e.g., 2025-2026) is required.' });
+      setPageStatusMessage({ type: 'error', message: 'A Target Session (e.g., 2025-2026) is required.' });
       return;
     }
 
     const { active_enrollment } = selectedStudentDetails;
     
     if (transferCourseId === active_enrollment.course_id) {
-       setModalStatusMessage({ type: 'error', message: 'Cannot transfer to the same course.' });
+       setPageStatusMessage({ type: 'error', message: 'Cannot transfer to the same course.' });
        return;
     }
 
     setIsTransferring(true);
-    setModalStatusMessage(null);
+    setPageStatusMessage(null);
     
     const newCourse = allCourses.find(c => c.id === transferCourseId)?.name || 'N/A';
     const newYear = allAcademicYears.find(ay => ay.id === transferAcademicYearId)?.name || 'N/A';
@@ -768,6 +591,7 @@ export default function PromotionPage() {
 
       if (insertError) throw new Error(`New Semester Insert Error: ${insertError.message}`);
       
+      // Update old semester status
       const { error: updateSemError } = await supabase
         .from("student_semesters")
         .update({ status: 'transferred', promotion_status: 'Hold' })
@@ -776,6 +600,7 @@ export default function PromotionPage() {
 
       if (updateSemError) throw new Error(`Old Semester Update Error: ${updateSemError.message}`);
       
+      // Update old academic year status
       const { error: updateYearError } = await supabase
         .from("student_academic_years")
         .update({ status: 'transferred' })
@@ -783,346 +608,176 @@ export default function PromotionPage() {
         
       if (updateYearError) throw new Error(`Old Year Update Error: ${updateYearError.message}`);
 
-      setModalStatusMessage({ type: 'success', message: `Student transferred to ${newCourse} (${newSemester}) successfully!` });
+      setPageStatusMessage({ type: 'success', message: `Student transferred to ${newCourse} (${newSemester}) successfully!` });
       
+      // Clear transfer fields
       setTransferStreamId(null);
       setTransferCourseId(null);
       setTransferAcademicYearId(null);
       setTransferSemesterId(null);
       setTransferSession("");
       
-      await openStudentModal(active_enrollment.student_id);
-      await fetchStudents(studentSearch, rollNumberSearch);
+      // Refresh the details in place
+      fetchStudentDetails(active_enrollment.student_id);
 
     } catch (err: any) {
-      setModalStatusMessage({ type: 'error', message: `Transfer Failed: ${err.message}` });
+      setPageStatusMessage({ type: 'error', message: `Transfer Failed: ${err.message}` });
     } finally {
       setIsTransferring(false);
     }
   };
 
 
-  // --- Table Columns ---
-  const columns: ColumnDef<StudentList>[] = [
-    {
-      accessorKey: "fullname",
-      header: "Student",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-3">
-          <StudentAvatar src={row.original.photo_path} alt={row.original.fullname} supabase={supabase} />
-          <div className="font-medium">{row.original.fullname}</div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "roll_number",
-      header: "Roll No.",
-    },
-    {
-      accessorKey: "course_name",
-      header: "Course",
-    },
-    {
-      accessorKey: "academic_year_name",
-      header: "Current Year",
-      cell: ({ row }) => row.original.academic_year_name,
-    },
-    {
-      accessorKey: "semester_name",
-      header: "Current Semester",
-      cell: ({ row }) => row.original.semester_name,
-    },
-    {
-      accessorKey: "promotion_status",
-      header: "Promotion Status",
-      cell: ({ row }) => (
-        <Badge variant={row.original.promotion_status === 'Eligible' ? 'default' : 'secondary'} className="capitalize">
-          {row.original.promotion_status}
-        </Badge>
-      ),
-    },
-    {
-      id: "actions",
-      cell: ({ row }) => (
-        <div className="text-right">
-          <Button variant="outline" size="sm" onClick={() => openStudentModal(row.original.student_id)}>
-            Manage
-            <ChevronsRight className="w-4 h-4 ml-1" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  // --- Derived Filters for Transfer Dropdowns ---
+  const transferCourseOptions = useMemo(() => 
+    allCourses.filter(c => c.stream_id === transferStreamId).sort(robustSortByName), 
+    [allCourses, transferStreamId]
+  );
+  const transferAcademicYearOptions = useMemo(() => 
+    allAcademicYears.filter(ay => ay.course_id === transferCourseId).sort(robustSortByName), 
+    [allAcademicYears, transferCourseId]
+  );
+  const transferSemesterOptions = useMemo(() => 
+    allSemesters.filter(s => s.academic_year_id === transferAcademicYearId).sort(robustSortByName), 
+    [allSemesters, transferAcademicYearId]
+  );
 
-  // --- Table Instance ---
-  const table = useReactTable({
-    data: students,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
-    state: {
-      sorting,
-    },
-  });
+  // --- DERIVED STATE FOR RENDER ONLY: Active Enrollment Status ---
+  const activeEnrollmentStatus = selectedStudentDetails?.active_enrollment
+    ? selectedStudentDetails.academic_years
+        .find((y) => y.id === selectedStudentDetails.active_enrollment!.student_academic_year_id)
+        ?.student_semesters.find(
+          (s) => s.semester_id === selectedStudentDetails.active_enrollment!.semester_id && s.status === 'active'
+        )?.promotion_status
+    : null;
+  // --- END DERIVED STATE ---
+
 
   // --- Render ---
+  if (!studentId) {
+    return (
+      <div className="p-4 md:p-8 space-y-4">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Missing Parameter</AlertTitle>
+          <AlertDescription>
+            The student ID is missing. Please navigate to this page using a URL like 
+            <code className="bg-red-50 p-1 rounded ml-2">/student/promotion?student_id=XXX</code>.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <Card className="shadow-lg">
+      <Card className="shadow-lg max-w-5xl mx-auto">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold text-blue-700">Student Promotion & Transfer</CardTitle>
-          <CardDescription>Search for a student or filter by enrollment to manage academic progression.</CardDescription>
+          <CardTitle className="text-3xl font-bold text-blue-700 flex items-center">
+            <Send className="w-6 h-6 mr-3" />
+            Manage Student Progression
+          </CardTitle>
+          <p className="text-lg text-muted-foreground">Student ID: <code className="bg-gray-100 p-1 rounded">{studentId}</code></p>
         </CardHeader>
         <CardContent>
-          {statusMessage && (
-            <Alert variant={statusMessage.type === 'error' ? 'destructive' : 'default'} className={`mb-4 ${statusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
+          {(initialLoading || configLoading) && (
+            <div className="flex flex-col items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <p className="mt-4 text-gray-500">Loading student details and configuration...</p>
+            </div>
+          )}
+
+          {pageStatusMessage && (
+            <Alert variant={pageStatusMessage.type === 'error' ? 'destructive' : 'default'} className={`mb-4 ${pageStatusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{statusMessage.type === 'error' ? 'Error' : 'Success!'}</AlertTitle>
-              <AlertDescription>{statusMessage.message}</AlertDescription>
+              <AlertTitle>{pageStatusMessage.type === 'error' ? 'Operation Status' : 'Success!'}</AlertTitle>
+              <AlertDescription>{pageStatusMessage.message}</AlertDescription>
             </Alert>
           )}
 
-          {/* --- UPDATED: Search and Filter Section --- */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              <DropdownSelect
-                label="Filter by Stream"
-                options={streamOptions}
-                value={selectedStream}
-                onChange={(v) => { setSelectedStream(v); setSelectedCourse(null); setSelectedAcademicYear(null); setSelectedSemester(null); }}
-                placeholder="All Streams..."
-                disabled={loadingFilters}
-              />
-              <DropdownSelect
-                label="Filter by Course"
-                options={courseOptions}
-                value={selectedCourse}
-                onChange={(v) => { setSelectedCourse(v); setSelectedAcademicYear(null); setSelectedSemester(null); }}
-                placeholder="All Courses..."
-                disabled={loadingFilters || !selectedStream}
-              />
-              <DropdownSelect
-                label="Filter by Year"
-                options={academicYearOptions}
-                value={selectedAcademicYear}
-                onChange={(v) => { setSelectedAcademicYear(v); setSelectedSemester(null); }}
-                placeholder="All Years..."
-                disabled={loadingFilters || !selectedCourse}
-              />
-              <DropdownSelect
-                label="Filter by Semester"
-                options={semesterOptions}
-                value={selectedSemester}
-                onChange={setSelectedSemester}
-                placeholder="All Semesters..."
-                disabled={loadingFilters || !selectedAcademicYear}
-              />
-            </div>
-            <div className="flex flex-col md:flex-row gap-4 justify-between pt-2">
-              <div className="relative w-full md:max-w-xs">
-                <Label htmlFor="name-search">Search by Name</Label>
-                <Input
-                  id="name-search"
-                  placeholder="Search by student name..."
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
+          {!initialLoading && selectedStudentDetails && (
+            <div className="space-y-6">
+              <div className="flex items-start gap-4 p-4 border rounded-lg bg-gray-50">
+                <StudentAvatar 
+                  src={selectedStudentDetails.photo_path} 
+                  alt={selectedStudentDetails.fullname} 
+                  supabase={supabase} 
+                  className="h-20 w-20" 
                 />
-              </div>
-              <div className="relative w-full md:max-w-xs">
-                <Label htmlFor="roll-search">Search by Roll No.</Label>
-                <Input
-                  id="roll-search"
-                  placeholder="Search by Roll No..."
-                  value={rollNumberSearch}
-                  onChange={(e) => setRollNumberSearch(e.target.value)}
-                />
-              </div>
-              <div className="flex gap-2 justify-end items-end">
-                <Button variant="outline" onClick={handleClearClick} disabled={loading}>
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Clear
-                </Button>
-                <Button onClick={handleSearchClick} disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Search className="h-4 w-4 mr-2" />}
-                  Search
-                </Button>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-6 border-t pt-6">
-            <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Student List
-            </h3>
-            <div className="max-h-96 overflow-y-auto border rounded-lg">
-              <Table>
-                <TableHeader className="bg-gray-50 sticky top-0 z-10">
-                  {table.getHeaderGroups().map(headerGroup => (
-                    <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map(header => (
-                        <TableHead key={header.id}>
-                          {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {loading && (
-                    <TableRow>
-                      <TableCell colSpan={columns.length} className="text-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!loading && table.getRowModel().rows.length > 0 && (
-                    table.getRowModel().rows.map(row => (
-                      <TableRow key={row.original.student_id}> {/* --- UPDATED: Use student_id as key --- */}
-                        {row.getVisibleCells().map(cell => (
-                          <TableCell key={cell.id}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  )}
-                  {!loading && table.getRowModel().rows.length === 0 && (
-                     <TableRow>
-                      <TableCell colSpan={columns.length} className="text-center py-8 text-gray-500">
-                        No students found. Please use the filters or search to find a student.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-
-        </CardContent>
-      </Card>
-
-      {/* --- NEW: Student Details Modal --- */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="pr-6">
-            {modalLoading && (
-              <DialogTitle className="text-2xl font-bold">Loading Student Details...</DialogTitle>
-            )}
-            {selectedStudentDetails && (
-              <div className="flex items-start gap-4">
-                <StudentAvatar src={selectedStudentDetails.photo_path} alt={selectedStudentDetails.fullname} supabase={supabase} className="h-20 w-20" />
                 <div>
-                  <DialogTitle className="text-2xl font-bold">{selectedStudentDetails.fullname}</DialogTitle>
-                  <DialogDescription className="text-base">
+                  <h3 className="text-2xl font-bold">{selectedStudentDetails.fullname}</h3>
+                  <p className="text-base text-muted-foreground">Roll No: 
+                    <span className="font-semibold text-gray-700 ml-1">{selectedStudentDetails.roll_number || 'N/A'}</span>
+                  </p>
+                  <p className="text-base text-muted-foreground">Current Enrollment Status:</p>
+                  <div className="mt-1">
                     {selectedStudentDetails.active_enrollment ? (
                       <>
-                        {selectedStudentDetails.active_enrollment.academic_year_name} - {selectedStudentDetails.active_enrollment.semester_name}
-                        <Badge className="ml-2">Active</Badge>
+                        <Badge variant="default" className="text-sm">
+                          {selectedStudentDetails.active_enrollment.academic_year_name} - {selectedStudentDetails.active_enrollment.semester_name}
+                        </Badge>
+                        <Badge variant="secondary" className="ml-2 text-sm">Active</Badge>
                       </>
                     ) : (
-                      <Badge variant="destructive">Inactive</Badge>
+                      <Badge variant="destructive">Inactive / Not Enrolled</Badge>
                     )}
-                  </DialogDescription>
+                  </div>
                 </div>
               </div>
-            )}
-          </DialogHeader>
 
-          {modalLoading && (
-            <div className="flex items-center justify-center h-96">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-          )}
-
-          {!modalLoading && selectedStudentDetails && (
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              <Tabs defaultValue="history">
+              <Tabs defaultValue="promote">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="history"><History className="w-4 h-4 mr-2" />Academic History</TabsTrigger>
                   <TabsTrigger value="promote"><Send className="w-4 h-4 mr-2" />Promote Student</TabsTrigger>
                   <TabsTrigger value="transfer"><GitBranch className="w-4 h-4 mr-2" />Branch Transfer</TabsTrigger>
+                  <TabsTrigger value="history"><History className="w-4 h-4 mr-2" />Academic History</TabsTrigger>
                 </TabsList>
                 
-                {/* --- Tab 1: History --- */}
-                <TabsContent value="history" className="mt-4 space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Academic Progression</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {selectedStudentDetails.academic_years.length === 0 && (
-                        <p className="text-muted-foreground">No academic history found for this student.</p>
-                      )}
-                      {selectedStudentDetails.academic_years.map(year => (
-                        <div key={year.id} className="border rounded-lg p-4">
-                          <div className="flex justify-between items-center">
-                            <h4 className="text-lg font-semibold">{year.academic_year_name} ({year.academic_year_session})</h4>
-                            <Badge variant={year.status === 'Active' ? 'default' : 'secondary'}>{year.status}</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{year.courses?.name}</p>
-                          <Separator className="my-2" />
-                          <div className="space-y-2">
-                            {year.student_semesters.map(sem => (
-                              <div key={sem.id} className="flex justify-between items-center text-sm pl-4">
-                                <span className="font-medium">{sem.semesters?.name}</span>
-                                <Badge variant={sem.status === 'active' ? 'outline' : 'secondary'} className="capitalize">
-                                  {sem.status}
-                                  {sem.status !== 'active' && ` (${sem.promotion_status})`}
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                
-                {/* --- Tab 2: Promotion --- */}
+                {/* --- Tab 1: Promotion --- */}
                 <TabsContent value="promote" className="mt-4 space-y-4">
                   <Card>
                     <CardHeader>
                       <CardTitle>Promote Student</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      {modalStatusMessage && (
-                        <Alert variant={modalStatusMessage.type === 'error' ? 'destructive' : 'default'} className={`${modalStatusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertTitle>{modalStatusMessage.type === 'error' ? 'Operation Failed' : 'Success!'}</AlertTitle>
-                          <AlertDescription>{modalStatusMessage.message}</AlertDescription>
-                        </Alert>
-                      )}
-
-                      {!selectedStudentDetails.active_enrollment && (
-                          <Alert variant="destructive">
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertTitle>Cannot Promote</AlertTitle>
-                          <AlertDescription>This student does not have an active enrollment and cannot be promoted.</AlertDescription>
-                        </Alert>
-                      )}
+                    <CardContent className="space-y-6">
                       
-                      {selectedStudentDetails.active_enrollment && (
+                      {!selectedStudentDetails.active_enrollment ? (
+                          <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Cannot Promote</AlertTitle>
+                            <AlertDescription>This student does not have an active enrollment and cannot be promoted.</AlertDescription>
+                          </Alert>
+                      ) : (
                         <>
-                          <div className="grid grid-cols-2 gap-4 items-center">
-                            <div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center p-4 border rounded-lg">
+                            <div className="text-center">
                               <Label>Current Enrollment</Label>
-                              <p className="text-lg font-semibold">{selectedStudentDetails.active_enrollment.academic_year_name}</p>
-                              <p className="text-sm text-muted-foreground">{selectedStudentDetails.active_enrollment.semester_name}</p>
+                              <p className="text-xl font-bold text-blue-700">{selectedStudentDetails.active_enrollment.academic_year_name}</p>
+                              <p className="text-md text-muted-foreground">{selectedStudentDetails.active_enrollment.semester_name}</p>
+                                
+                                {/* --- ADDED: Display Current Promotion Status Badge --- */}
+                                {activeEnrollmentStatus && (
+                                    <Badge 
+                                        variant={activeEnrollmentStatus === 'Eligible' ? 'default' : 'destructive'} 
+                                        className="mt-2 text-sm capitalize"
+                                    >
+                                        <ShieldCheck className="h-4 w-4 mr-1" />
+                                        Status: **{activeEnrollmentStatus}**
+                                    </Badge>
+                                )}
+                                {/* --- END ADDITION --- */}
+
                             </div>
-                            <ChevronsRight className="w-8 h-8 text-muted-foreground mx-auto" />
-                            <div>
+                            <ChevronsRight className="w-10 h-10 text-muted-foreground mx-auto hidden md:block" />
+                            <div className="text-center">
                               <Label>Promotion Target</Label>
                               {promotionTarget ? (
                                 <>
-                                  <p className="text-lg font-semibold text-green-600">{promotionTarget.targetAcademicYearName}</p>
-                                  <p className="text-sm text-muted-foreground">{promotionTarget.targetSemesterName}</p>
+                                  <p className="text-xl font-bold text-green-600">{promotionTarget.targetAcademicYearName}</p>
+                                  <p className="text-md text-muted-foreground">{promotionTarget.targetSemesterName}</p>
+                                  {promotionTarget.isNewYear && <Badge variant="outline" className="mt-1 bg-yellow-100 text-yellow-800 border-yellow-500">New Academic Year</Badge>}
                                 </>
                               ) : (
-                                <p className="text-lg font-semibold text-red-600">End of Course</p>
+                                <p className="text-xl font-bold text-red-600">End of Course</p>
                               )}
                             </div>
                           </div>
@@ -1137,49 +792,54 @@ export default function PromotionPage() {
                                 onChange={(e) => setTargetAcademicYearSession(e.target.value)}
                                 required
                               />
-                              <p className="text-xs text-gray-500">Required. This is the session for the new academic year.</p>
+                              <p className="text-xs text-gray-500">Required. This is the session for the newly created academic year record.</p>
                             </div>
                           )}
                           
-                          <Button onClick={handlePromotion} disabled={!promotionTarget || isPromoting}>
+                          <Button 
+                            onClick={handlePromotion} 
+                            disabled={!promotionTarget || isPromoting || (promotionTarget?.isNewYear && !targetAcademicYearSession.trim())}
+                          >
                             {isPromoting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-                            Promote to {promotionTarget?.targetSemesterName || '...'}
+                            Confirm Promotion to {promotionTarget?.targetSemesterName || '...'}
                           </Button>
+                          
+                          {/* Display status warning if not eligible, but only if promotionTarget exists */}
+                          {promotionTarget && activeEnrollmentStatus !== "Eligible" && (
+                              <Alert variant="destructive">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertTitle>Promotion Blocked</AlertTitle>
+                                <AlertDescription>
+                                        The student's current promotion status is **'{activeEnrollmentStatus}'**. Only students with status 'Eligible' can be promoted.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
                         </>
                       )}
                     </CardContent>
                   </Card>
                 </TabsContent>
                 
-                {/* --- Tab 3: Transfer --- */}
+                {/* --- Tab 2: Transfer --- */}
                 <TabsContent value="transfer" className="mt-4 space-y-4">
-                    <Card>
+                  <Card>
                     <CardHeader>
                       <CardTitle>Transfer Student to New Branch</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      {modalStatusMessage && (
-                        <Alert variant={modalStatusMessage.type === 'error' ? 'destructive' : 'default'} className={`${modalStatusMessage.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : ''}`}>
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertTitle>{modalStatusMessage.type === 'error' ? 'Operation Failed' : 'Success!'}</AlertTitle>
-                          <AlertDescription>{modalStatusMessage.message}</AlertDescription>
-                        </Alert>
-                      )}
+                    <CardContent className="space-y-6">
                       
-                      {!selectedStudentDetails.active_enrollment && (
-                          <Alert variant="destructive">
+                      {!selectedStudentDetails.active_enrollment ? (
+                        <Alert variant="destructive">
                           <AlertTriangle className="h-4 w-4" />
                           <AlertTitle>Cannot Transfer</AlertTitle>
                           <AlertDescription>This student does not have an active enrollment and cannot be transferred.</AlertDescription>
                         </Alert>
-                      )}
-                      
-                      {selectedStudentDetails.active_enrollment && (
+                      ) : (
                         <>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <DropdownSelect label="1. New Stream" value={transferStreamId} onChange={(v) => { setTransferStreamId(v); setTransferCourseId(null); setTransferAcademicYearId(null); setTransferSemesterId(null); }} options={allStreams} placeholder="Select Stream" />
-                            <DropdownSelect label="2. New Course" value={transferCourseId} onChange={(v) => { setTransferCourseId(v); setTransferAcademicYearId(null); setTransferSemesterId(null); }} options={transferCourseOptions} placeholder="Select Course" disabled={!transferStreamId} />
-                            <DropdownSelect label="3. Target Year" value={transferAcademicYearId} onChange={(v) => { setTransferAcademicYearId(v); setTransferSemesterId(null); }} options={transferAcademicYearOptions} placeholder="Select Year" disabled={!transferCourseId} />
+                            <DropdownSelect label="1. New Stream" value={transferStreamId} onChange={handleTransferStreamChange} options={allStreams} placeholder="Select Stream" />
+                            <DropdownSelect label="2. New Course" value={transferCourseId} onChange={handleTransferCourseChange} options={transferCourseOptions} placeholder="Select Course" disabled={!transferStreamId} />
+                            <DropdownSelect label="3. Target Year" value={transferAcademicYearId} onChange={handleTransferAcademicYearChange} options={transferAcademicYearOptions} placeholder="Select Year" disabled={!transferCourseId} />
                             <DropdownSelect label="4. Target Semester" value={transferSemesterId} onChange={setTransferSemesterId} options={transferSemesterOptions} placeholder="Select Semester" disabled={!transferAcademicYearId} />
                           </div>
                           
@@ -1192,51 +852,70 @@ export default function PromotionPage() {
                               onChange={(e) => setTransferSession(e.target.value)}
                               required
                             />
+                            <p className="text-xs text-gray-500">Required. This is the session for the new academic year/enrollment.</p>
                           </div>
                           
-                          <Button onClick={handleBranchTransfer} disabled={!transferSemesterId || !transferSession || isTransferring} className="bg-red-600 hover:bg-red-700">
+                          <Button 
+                            onClick={handleBranchTransfer} 
+                            disabled={!transferSemesterId || !transferSession || isTransferring} 
+                            className="bg-red-600 hover:bg-red-700"
+                          >
                             {isTransferring ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <GitBranch className="h-4 w-4 mr-2" />}
                             Confirm Branch Transfer
                           </Button>
                           <p className="text-sm text-gray-500 mt-2">
-                            Transfer Note: This will create a new academic year and semester record for the student in the new branch and deactivate their old records.
+                            Transfer Note: This will create a **new active enrollment** in the selected course/semester and mark the student's old enrollment records as 'transferred' / 'inactive'.
                           </p>
                         </>
                       )}
                     </CardContent>
                   </Card>
                 </TabsContent>
+
+                {/* --- Tab 3: History --- */}
+                <TabsContent value="history" className="mt-4 space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Academic Progression</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {selectedStudentDetails.academic_years.length === 0 && (
+                        <p className="text-muted-foreground">No academic history found for this student.</p>
+                      )}
+                      {selectedStudentDetails.academic_years.map(year => (
+                        <div key={year.id} className="border rounded-lg p-4">
+                          <div className="flex justify-between items-center">
+                            <h4 className="text-lg font-semibold flex items-center gap-2">
+                              <GraduationCap className="w-5 h-5 text-blue-500" />
+                              {year.academic_year_name} ({year.academic_year_session})
+                            </h4>
+                            <Badge variant={year.status === 'Active' ? 'default' : 'secondary'}>{year.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground font-medium">{year.courses?.name}</p>
+                          <Separator className="my-2" />
+                          <div className="space-y-2">
+                            {year.student_semesters.map(sem => (
+                              <div key={sem.id} className="flex justify-between items-center text-sm pl-4">
+                                <span className="font-medium">{sem.semesters?.name}</span>
+                                <Badge variant={sem.status === 'active' ? 'outline' : 'secondary'} className="capitalize">
+                                  {sem.status === 'active' ? <ShieldCheck className="h-3 w-3 mr-1" /> : <ShieldAlert className="h-3 w-3 mr-1" />}
+                                  {sem.status}
+                                  {sem.status !== 'active' && ` (${sem.promotion_status})`}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
               </Tabs>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Card>
     </div>
   );
 }
-
-
-// --- Helper Dropdown Component ---
-const DropdownSelect: React.FC<{
-  label: string;
-  value: string | null;
-  onChange: (value: string | null) => void;
-  options: { id: string; name: string }[];
-  placeholder: string;
-  disabled?: boolean;
-}> = ({ label, value, onChange, options, placeholder, disabled = false }) => (
-  <div className="space-y-1">
-    <Label className="font-semibold">{label}</Label>
-    <Dropdown
-      value={value}
-      options={options}
-      onChange={(e) => onChange(e.value)}
-      optionLabel="name"
-      optionValue="id"
-      placeholder={placeholder}
-      className="w-full"
-      filter
-      disabled={disabled}
-    />
-  </div>
-);

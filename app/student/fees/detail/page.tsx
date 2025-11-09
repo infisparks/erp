@@ -20,6 +20,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 
 // --- Icons ---
 import {
@@ -27,36 +33,57 @@ import {
   AlertTriangle,
   ArrowLeft,
   UserRound,
+  Info, // For Inactive status
 } from "lucide-react"
 
 // --- Type Definitions ---
 interface StudentFullDetails {
-  id: number; // GR No.
+  id: number; // Students.id (BIGINT)
   fullname: string;
-  father_name: string;
-  mother_name: string;
-  correspondence_details: string; // JSON string
-  permanent_details: string; // JSON string
-  nationality: string;
+  father_name: string | null;
+  mother_name: string | null;
+  father_email: string | null;
+  mother_email: string | null;
+  correspondence_details: any; // JSONB
+  permanent_details: any; // JSONB
+  nationality: string | null;
   created_at: string; // Admission Date
-  admission_type: string;
-  admission_category: string; // Quota
-  dateofbirth: string;
-  gender: string;
-  student_mobile_no: string;
-  father_mobile_no: string;
-  mother_mobile_no: string;
-  email: string;
-  original_total_fee: number;
-  original_admission_fee: number;
-  original_scholarship_amount: number;
+  admission_type: string | null;
+  admission_category: string | null; // Quota
+  dateofbirth: string | null;
+  gender: string | null;
+  student_mobile_no: string | null;
+  father_mobile_no: string | null;
+  mother_mobile_no: string | null;
+  email: string | null;
   photo_path: string | null;
+  roll_number: string | null;
 }
 
-interface EnrollmentDetails {
-  roll_number: string;
-  course_name: string;
-  semester_name: string;
+interface SemesterEnrollment {
+  semester_id: string; // UUID from semesters table
+  semester_name: string; // Name from semesters table
+  roll_number: string; // From students table
+  status: string;
+}
+
+interface AcademicYearFinancials {
+  id: number; // student_academic_years.id (BIGINT)
+  academic_year_name: string;
+  academic_year_session: string;
+  course_name: string; // from courses table via course_id
+  total_fee: number; // Full fee
+  scholarship_name: string | null; // Allocated scholarship name
+  scholarship_amount: number; // Allocated scholarship
+  net_payable_fee: number; // Total Fee - Scholarship
+  status: string;
+  is_registered: boolean; // ✅ NEW: Added this field
+  semesters: SemesterEnrollment[];
+  payments: Payment[]; // Payments linked to this academic year ID
+  
+  // Memoized fields
+  totalPaid: number;
+  remainingDue: number;
 }
 
 interface Payment {
@@ -65,16 +92,18 @@ interface Payment {
   fees_type: string | null;
   payment_method: string | null;
   created_at: string;
+  receipt_no: number;
+  student_academic_year_id: number; // Link back to the academic year
 }
 
 interface AddressDetails {
-  address_line: string;
-  city: string;
-  pinCode: string;
-  post: string;
-  taluka: string;
-  district: string;
-  state: string;
+  address_line?: string;
+  city?: string;
+  pinCode?: string;
+  post?: string;
+  taluka?: string;
+  district?: string;
+  state?: string;
 }
 
 // -------------------------------------------------------------------
@@ -84,7 +113,7 @@ interface AddressDetails {
 /**
  * Formats a date string into "DD-MMM-YYYY"
  */
-const formatDate = (dateString: string) => {
+const formatDate = (dateString: string | null) => {
   if (!dateString) return "N/A";
   return new Date(dateString).toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -108,29 +137,47 @@ const formatCurrency = (amount: number | null | undefined) => {
 /**
  * Displays a single piece of information in the header (Small)
  */
-const InfoItem: React.FC<{ label: string; value: string | null | undefined }> = ({ label, value }) => (
-  <div>
+const InfoItem: React.FC<{ label: string; value: string | number | null | undefined, className?: string }> = ({ label, value, className = "" }) => (
+  <div className="flex flex-col">
     <span className="block text-xs font-medium text-muted-foreground uppercase leading-tight">{label}</span>
-    <span className="text-sm font-semibold leading-tight">{value || "N/A"}</span>
+    <span className={`text-sm font-semibold leading-tight break-words ${className}`}>
+      {/* Ensure numbers are displayed as strings */}
+      {value === null || value === undefined || value === "" ? "N/A" : (typeof value === 'number' ? value.toString() : value)}
+    </span>
   </div>
 )
 
 /**
  * Parses and displays a JSON address string (Small)
  */
-const AddressCard: React.FC<{ title: string; detailsJson: string | null | undefined }> = ({ title, detailsJson }) => {
-  let details: AddressDetails | null = null;
-  if (detailsJson) {
+const AddressCard: React.FC<{ title: string; detailsJson: any }> = ({ title, detailsJson }) => {
+  let details: AddressDetails = {};
+  let data = detailsJson;
+
+  // Attempt to parse if it's a string, otherwise assume it's already an object or null
+  if (typeof detailsJson === 'string') {
     try {
-      details = JSON.parse(detailsJson);
+      data = JSON.parse(detailsJson);
     } catch (e) {
       console.error("Failed to parse address JSON:", e);
+      data = null;
     }
   }
+  
+  if (data && typeof data === 'object') {
+    details = data;
+  }
 
-  const fullAddress = details
-    ? `${details.address_line}, ${details.taluka}, ${details.city}, ${details.district}, ${details.state} - ${details.pinCode}`
-    : "N/A";
+  const parts = [
+    details.address_line,
+    details.taluka,
+    details.city,
+    details.district,
+    details.state,
+    details.pinCode,
+  ].filter(Boolean).join(', ');
+
+  const fullAddress = parts.length > 0 ? parts : "N/A";
 
   return (
     <div className="md:col-span-2">
@@ -143,7 +190,7 @@ const AddressCard: React.FC<{ title: string; detailsJson: string | null | undefi
 /**
  * Displays a summary row for the financial tables (Small)
  */
-const FeeSummaryRow: React.FC<{ label: string; value: number; isBold?: boolean; colorClass?: string }> = ({ label, value, isBold = false, colorClass = "text-foreground" }) => (
+const FeeSummaryRow: React.FC<{ label: string | number; value: number; isBold?: boolean; colorClass?: string }> = ({ label, value, isBold = false, colorClass = "text-foreground" }) => (
   <div className="flex justify-between items-center py-0.5">
     <span className={`text-xs ${isBold ? "font-semibold" : "text-muted-foreground"}`}>
       {label}
@@ -154,6 +201,135 @@ const FeeSummaryRow: React.FC<{ label: string; value: number; isBold?: boolean; 
   </div>
 )
 
+/**
+ * Renders the financial section for a single Academic Year.
+ */
+const AcademicYearFinancialCard: React.FC<{ year: AcademicYearFinancials; studentId: number }> = ({ year, studentId }) => {
+  // Separate tuition/fees from scholarship payments (if needed)
+  const feePayments = year.payments.filter(p => p.fees_type !== 'Scholarship');
+  const scholarshipPayments = year.payments.filter(p => p.fees_type === 'Scholarship');
+  const scholarshipUsed = scholarshipPayments.reduce((sum, p) => sum + p.amount, 0);
+  const tuitionPaid = feePayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const remainingScholarship = year.scholarship_amount - scholarshipUsed;
+
+  return (
+    <AccordionItem value={year.id.toString()} className="border-t">
+      <AccordionTrigger className="hover:no-underline px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
+        <div className="grid grid-cols-4 w-full text-left font-bold text-sm">
+          <span>{year.academic_year_name} ({year.academic_year_session})</span>
+          <span className="text-center">{formatCurrency(year.net_payable_fee)}</span>
+          <span className={`text-center ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(tuitionPaid)}
+          </span>
+          <span className={`text-right ${year.remainingDue <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(year.remainingDue)}
+          </span>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="p-4 border border-t-0 rounded-b-lg">
+        
+        {/* --- ✅ NEW: Conditional Warnings --- */}
+        {year.status === 'Inactive' && (
+          <Alert variant="default" className="mb-4 bg-gray-100 border-gray-300">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Year Inactive</AlertTitle>
+            <AlertDescription className="text-xs">
+              This academic year is currently marked as <strong>Inactive</strong>. 
+              Financial amounts for this year are excluded from the global summary, 
+              and ledger details are shown for historical reference.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {year.status === 'Active' && !year.is_registered && (
+           <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Registration Pending</AlertTitle>
+            <AlertDescription className="text-xs">
+              Registration for this academic year is <strong>pending</strong>. 
+              Please complete registration to activate financial services.
+              <Button variant="link" asChild className="p-0 h-auto ml-1 text-xs">
+                <Link href={`/student/registration?student_id=${studentId}`}>
+                  Complete Registration Now
+                </Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          
+          {/* Col 1: Summary */}
+          <div className="space-y-2 col-span-1">
+            <h4 className="font-bold text-sm border-b pb-1 text-primary">Year Summary</h4>
+            <InfoItem label="Course" value={year.course_name} />
+            <InfoItem label="Semesters" value={year.semesters.map(s => s.semester_name).join(', ')} />
+            <FeeSummaryRow label="Total Course Fee" value={year.total_fee} />
+            <FeeSummaryRow label={`Scholarship (${year.scholarship_name || 'N/A'})`} value={year.scholarship_amount} colorClass="text-orange-600" />
+            <Separator className="my-1"/>
+            <FeeSummaryRow label="Net Payable Fee" value={year.net_payable_fee} isBold={true} colorClass="text-primary" />
+            <FeeSummaryRow label="Total Paid" value={tuitionPaid} isBold={true} colorClass="text-green-600" />
+            <FeeSummaryRow 
+              label="Remaining Due" 
+              value={year.remainingDue} 
+              isBold={true} 
+              colorClass={year.remainingDue > 0 ? "text-destructive" : "text-green-600"}
+            />
+            
+            <Separator className="my-2"/>
+            <h4 className="font-bold text-sm border-b pb-1 text-orange-600">Scholarship Ledger</h4>
+            <FeeSummaryRow label="Allocated Scholarship" value={year.scholarship_amount} />
+            <FeeSummaryRow label="Scholarship Used" value={scholarshipUsed} colorClass="text-green-600" />
+            <FeeSummaryRow 
+              label="Remaining Scholarship" 
+              value={remainingScholarship} 
+              isBold={true} 
+              colorClass={remainingScholarship > 0 ? "text-orange-600" : "text-green-600"}
+            />
+          </div>
+
+          {/* Col 2 & 3: Payment History */}
+          <div className="col-span-3 space-y-2">
+            <h4 className="font-bold text-sm border-b pb-1 text-primary">Payment History (Receipts)</h4>
+            <div className="max-h-96 overflow-y-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[100px] text-xs py-2">Receipt No</TableHead>
+                    <TableHead className="w-[150px] text-xs py-2">Date</TableHead>
+                    <TableHead className="text-xs py-2">Fees Type / Method</TableHead>
+                    <TableHead className="w-[120px] text-right text-xs py-2">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {year.payments.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} className="p-4 h-10 text-xs text-center">No payments recorded for this academic year.</TableCell></TableRow>
+                  ) : (
+                    year.payments.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map(p => (
+                      <TableRow key={p.id}>
+                        <TableCell className="text-xs p-2 font-medium">{p.receipt_no}</TableCell>
+                        <TableCell className="text-xs p-2">{formatDate(p.created_at)}</TableCell>
+                        <TableCell className="text-xs p-2">
+                          <div className="font-medium">{p.fees_type || 'General Fee'}</div>
+                          <div className="text-muted-foreground">{p.payment_method}</div>
+                        </TableCell>
+                        <TableCell className="text-right text-xs p-2 font-bold">{formatCurrency(p.amount)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+        </div>
+      </AccordionContent>
+    </AccordionItem>
+  )
+}
+
+
 // -------------------------------------------------------------------
 // 🚀 Main Page Component 🚀
 // -------------------------------------------------------------------
@@ -162,19 +338,17 @@ function StudentFeeDetailPage() {
   const supabase = getSupabaseClient()
   const searchParams = useSearchParams()
   const studentId = searchParams.get('student_id')
-  const academicYear = searchParams.get('year')
 
   // --- State ---
   const [student, setStudent] = useState<StudentFullDetails | null>(null)
-  const [enrollment, setEnrollment] = useState<EnrollmentDetails | null>(null)
-  const [payments, setPayments] = useState<Payment[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYearFinancials[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // --- Data Fetching ---
   useEffect(() => {
-    if (!studentId || !academicYear) {
-      setError("Student ID or Academic Year not provided.")
+    if (!studentId) {
+      setError("Student ID not provided.")
       setLoading(false)
       return
     }
@@ -183,55 +357,102 @@ function StudentFeeDetailPage() {
       setLoading(true)
       setError(null)
       
+      const numericStudentId = parseInt(studentId, 10);
+      if (isNaN(numericStudentId)) {
+        setError("Invalid Student ID format. The ID must be a number.")
+        setLoading(false);
+        return;
+      }
+
       try {
-        const [studentResult, enrollmentResult, paymentResult] = await Promise.all([
-          // 1. Fetch Student Details
-          supabase
-            .from("students")
-            .select(`
-              id, fullname, father_name, mother_name, correspondence_details, permanent_details,
-              nationality, created_at, admission_type, admission_category, dateofbirth,
-              gender, student_mobile_no, father_mobile_no, mother_mobile_no, email,
-              original_total_fee, original_admission_fee, original_scholarship_amount, photo_path
-            `)
-            .eq('id', studentId)
-            .single(),
+        // 1. Fetch Student Details
+        const { data: studentData, error: studentError } = await supabase
+          .from("students")
+          .select(`
+            id, fullname, father_name, mother_name, father_email, mother_email,
+            correspondence_details, permanent_details, nationality, created_at, 
+            admission_type, admission_category, dateofbirth, roll_number,
+            gender, student_mobile_no, father_mobile_no, mother_mobile_no, email,
+            photo_path
+          `)
+          .eq('id', numericStudentId) 
+          .single();
+
+        if (studentError) {
+             // Check for the specific error where no rows are returned
+            if (studentError.code === 'PGRST116') {
+                 throw new Error(`Student Fetch Error: No student found with ID ${numericStudentId}.`);
+            }
+            throw new Error(`Student Fetch Error: ${studentError.message}`);
+        }
+        setStudent(studentData as StudentFullDetails);
+
+        // 2. Fetch all Academic Year Enrollments for the student
+        const { data: ayData, error: ayError } = await supabase
+          .from("student_academic_years")
+          .select(`
+            id, academic_year_name, academic_year_session, total_fee, 
+            scholarship_name, scholarship_amount, net_payable_fee, status,
+            is_registered, 
+            course:courses ( name ),
+            semesters:student_semesters ( 
+              status, 
+              semester:semesters ( id, name )
+            )
+          `)
+          .eq("student_id", numericStudentId)
+          .order("academic_year_session", { ascending: true });
+
+        if (ayError) throw new Error(`Academic Year Fetch Error: ${ayError.message}`);
+        
+        // 3. Fetch all Payments for the student
+        const { data: paymentData, error: paymentError } = await supabase
+          .from("student_payments")
+          .select("id, amount, fees_type, payment_method, created_at, receipt_no, student_academic_year_id")
+          .eq("student_id", numericStudentId);
+
+        if (paymentError) throw new Error(`Payment Fetch Error: ${paymentError.message}`);
+        const allPayments = paymentData as Payment[];
+        
+        // --- Process and Merge Data ---
+        const processedYears: AcademicYearFinancials[] = (ayData as any[]).map(ay => {
           
-          // 2. Fetch Enrollment Details
-          supabase
-            .from("student_semesters")
-            .select(`
-              roll_number,
-              course:courses ( name ),
-              semester:semesters ( name )
-            `)
-            .eq("student_id", studentId)
-            .eq("academic_year", academicYear)
-            .single(),
+          const semesters: SemesterEnrollment[] = ay.semesters.map((ss: any) => ({
+            semester_id: ss.semester.id,
+            semester_name: ss.semester.name,
+            roll_number: studentData.roll_number || "N/A", 
+            status: ss.status,
+          }));
 
-          // 3. Fetch Payment History
-          supabase
-            .from("student_payments")
-            .select("id, amount, fees_type, payment_method, created_at")
-            .eq("student_id", studentId)
-            .eq("academic_year", academicYear)
-            .order("created_at", { ascending: true }) // Show oldest first
-        ]);
+          const yearPayments = allPayments.filter(p => p.student_academic_year_id === ay.id);
+          
+          const tuitionPaid = yearPayments
+            .filter(p => p.fees_type !== 'Scholarship') 
+            .reduce((sum, p) => sum + p.amount, 0);
 
-        // --- Process Results ---
-        if (studentResult.error) throw new Error(`Student Fetch Error: ${studentResult.error.message}`);
-        setStudent(studentResult.data as StudentFullDetails);
+          const remainingDue = (ay.net_payable_fee || 0) - tuitionPaid;
 
-        if (enrollmentResult.error) throw new Error(`Enrollment Fetch Error: ${enrollmentResult.error.message}`);
-        const enrollmentData = enrollmentResult.data as any;
-        setEnrollment({
-          roll_number: enrollmentData.roll_number,
-          course_name: enrollmentData.course.name,
-          semester_name: enrollmentData.semester.name,
+          const year: AcademicYearFinancials = {
+            id: ay.id,
+            academic_year_name: ay.academic_year_name,
+            academic_year_session: ay.academic_year_session,
+            course_name: ay.course.name,
+            total_fee: ay.total_fee || 0,
+            scholarship_name: ay.scholarship_name,
+            scholarship_amount: ay.scholarship_amount || 0,
+            net_payable_fee: ay.net_payable_fee || 0,
+            status: ay.status,
+            is_registered: ay.is_registered ?? false, // ✅ Process the new field
+            semesters,
+            payments: yearPayments,
+            totalPaid: tuitionPaid,
+            remainingDue: remainingDue,
+          };
+          
+          return year;
         });
 
-        if (paymentResult.error) throw new Error(`Payment Fetch Error: ${paymentResult.error.message}`);
-        setPayments(paymentResult.data as Payment[]);
+        setAcademicYears(processedYears);
 
       } catch (err: any) {
         console.error("Error fetching data:", err)
@@ -242,7 +463,7 @@ function StudentFeeDetailPage() {
     }
     
     fetchAllData()
-  }, [studentId, academicYear, supabase])
+  }, [studentId, supabase])
   
   // --- Avatar URL ---
   const avatarUrl = useMemo(() => {
@@ -252,48 +473,22 @@ function StudentFeeDetailPage() {
     return null
   }, [student, supabase])
 
-  // --- Memoized Calculations ---
-  const { 
-    tuitionPaid, 
-    scholarshipPaid, 
-    otherFeesPaid, 
-    remainingDue, 
-    remainingScholarship,
-    otherFeePayments,
-    receiptPayments
-  } = useMemo(() => {
-    let tuitionSum = 0;
-    let scholarshipSum = 0;
-    let otherFeesSum = 0;
-    const otherPaymentsList: Payment[] = [];
-    const receiptPaymentsList: Payment[] = [];
+  // --- Total Summary Calculations ---
+  const globalSummary = useMemo(() => {
+    // ✅ NEW: Filter out inactive years from global summary
+    const activeYears = academicYears.filter(year => year.status !== 'Inactive');
     
-    for (const p of payments) {
-      receiptPaymentsList.push(p); // All payments go into receipt list
-      
-      if (p.fees_type === 'Tuition Fee') {
-        tuitionSum += p.amount;
-      } else if (p.fees_type === 'Scholarship') {
-        scholarshipSum += p.amount;
-      } else {
-        otherFeesSum += p.amount;
-        otherPaymentsList.push(p); // Only non-tuition/scholarship go here
-      }
-    }
+    const totalNetPayable = activeYears.reduce((sum, year) => sum + year.net_payable_fee, 0);
+    const totalPaid = activeYears.reduce((sum, year) => sum + year.totalPaid, 0);
+    const totalRemaining = totalNetPayable - totalPaid;
     
-    const netPayable = student?.original_admission_fee || 0;
-    const totalScholarship = student?.original_scholarship_amount || 0;
-
     return {
-      tuitionPaid: tuitionSum,
-      scholarshipPaid: scholarshipSum,
-      otherFeesPaid: otherFeesSum,
-      remainingDue: netPayable - tuitionSum,
-      remainingScholarship: totalScholarship - scholarshipSum,
-      otherFeePayments: otherPaymentsList,
-      receiptPayments: receiptPaymentsList
-    }
-  }, [payments, student])
+      totalNetPayable,
+      totalPaid,
+      totalRemaining,
+      totalScholarship: activeYears.reduce((sum, year) => sum + year.scholarship_amount, 0),
+    };
+  }, [academicYears]);
 
 
   // --- Render Logic ---
@@ -301,32 +496,32 @@ function StudentFeeDetailPage() {
     if (loading) {
       return (
         <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="ml-2">Loading Student Details...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-2">Loading Student Details and Financial Ledger...</p>
         </div>
       )
     }
     
-    if (error || !student || !enrollment) {
+    if (error || !student) {
       return (
          <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error || "Could not load student details."}</AlertDescription>
+            <AlertDescription>{error || "Could not load student details. Ensure student ID is correct."}</AlertDescription>
           </Alert>
       )
     }
     
     return (
-      <CardContent className="pt-4 space-y-4">
+      <CardContent className="pt-4 space-y-6">
         
-        {/* --- 1. Student Info Header (As per image layout) --- */}
-        <div className="p-3 border bg-background rounded-lg">
-          <h3 className="text-base font-bold mb-2 border-b pb-1">Student Information</h3>
+        {/* --- 1. Student Info Header --- */}
+        <div className="p-3 border bg-background rounded-lg shadow-sm">
+          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Student Information</h3>
           
           <div className="flex flex-col md:flex-row gap-4">
             {/* Photo */}
-            <Avatar className="h-28 w-28 rounded-md">
+            <Avatar className="h-28 w-28 rounded-md shrink-0">
               <AvatarImage 
                 src={avatarUrl || undefined} 
                 alt={student.fullname || "Student Photo"} 
@@ -338,35 +533,40 @@ function StudentFeeDetailPage() {
             </Avatar>
 
             {/* Details */}
-            <div className="flex-1 space-y-2">
-              {/* 4-Column Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2">
+            <div className="flex-1 space-y-3">
+              {/* Personal/Academic Details Grid (4 Columns) */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
+                
                 {/* Col 1 */}
                 <div className="space-y-2">
                   <InfoItem label="Full Name" value={student.fullname} />
-                  <InfoItem label="Father's Name" value={student.father_name} />
-                  <InfoItem label="Mother's Name" value={student.mother_name} />
+                  <InfoItem label="GR No" value={student.id} />
+                  <InfoItem label="Roll No" value={student.roll_number} />
+                  <InfoItem label="Admission Date" value={formatDate(student.created_at)} />
                 </div>
+                
                 {/* Col 2 */}
                 <div className="space-y-2">
-                  <InfoItem label="GR No" value={student.id.toString()} />
-                  <InfoItem label="Roll No" value={enrollment.roll_number} />
-                  <InfoItem label="Course" value={enrollment.course_name} />
-                  <InfoItem label="Semester" value={enrollment.semester_name} />
+                  <InfoItem label="Gender" value={student.gender} />
+                  <InfoItem label="DOB" value={formatDate(student.dateofbirth)} />
+                  <InfoItem label="Nationality" value={student.nationality} />
+                  <InfoItem label="Mobile" value={student.student_mobile_no} />
                 </div>
+                
                 {/* Col 3 */}
                 <div className="space-y-2">
-                  <InfoItem label="Quota" value={student.admission_category} />
+                  <InfoItem label="Father's Name" value={student.father_name} />
+                  <InfoItem label="Father's Mobile" value={student.father_mobile_no} />
+                  <InfoItem label="Father's Email" value={student.father_email} />
                   <InfoItem label="Admission Type" value={student.admission_type} />
-                  <InfoItem label="Admission Date" value={formatDate(student.created_at)} />
-                  <InfoItem label="Nationality" value={student.nationality} />
                 </div>
+
                 {/* Col 4 */}
                 <div className="space-y-2">
-                  <InfoItem label="Gender" value={student.gender} />
-                  <InfoItem label="Date of Birth" value={formatDate(student.dateofbirth)} />
-                  <InfoItem label="Mobile" value={student.student_mobile_no} />
-                  <InfoItem label="Email ID" value={student.email} />
+                  <InfoItem label="Mother's Name" value={student.mother_name} />
+                  <InfoItem label="Mother's Mobile" value={student.mother_mobile_no} />
+                  <InfoItem label="Mother's Email" value={student.mother_email} />
+                  <InfoItem label="Quota/Category" value={student.admission_category} />
                 </div>
               </div>
 
@@ -374,111 +574,68 @@ function StudentFeeDetailPage() {
 
               {/* Address Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                <AddressCard title="Present Address" detailsJson={student.correspondence_details} />
+                <AddressCard title="Correspondence Address" detailsJson={student.correspondence_details} />
                 <AddressCard title="Permanent Address" detailsJson={student.permanent_details} />
               </div>
             </div>
           </div>
         </div>
-
-        {/* --- 2. Financial Details Grid (4 Columns) --- */}
-        <div className="p-3 border bg-background rounded-lg">
-          <h3 className="text-base font-bold mb-2 border-b pb-1">Financial Ledger for {academicYear}</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-
-            {/* Col 1: Advance Ledger (Other Fees) */}
-            <div className="space-y-1">
-              <h4 className="font-bold text-sm text-center border-b pb-1 mb-1">Advance Ledger</h4>
-              <div className="text-xs text-center text-muted-foreground mb-1">(Other Fees Paid)</div>
-              <Table>
-                <TableBody>
-                  {otherFeePayments.length === 0 ? (
-                    <TableRow><TableCell className="p-2 h-10 text-xs text-center">No other fees paid.</TableCell></TableRow>
-                  ) : (
-                    otherFeePayments.map(p => (
-                      <TableRow key={p.id}>
-                        <TableCell className="p-2">
-                          <div className="font-medium text-xs">{p.fees_type}</div>
-                          <div className="text-xs text-muted-foreground">{formatDate(p.created_at)}</div>
-                        </TableCell>
-                        <TableCell className="p-2 text-right font-medium text-xs">{formatCurrency(p.amount)}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                  <TableRow className="bg-muted">
-                    <TableHead className="p-2 text-xs">Total Other Paid</TableHead>
-                    <TableHead className="p-2 text-right text-xs">{formatCurrency(otherFeesPaid)}</TableHead>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Col 2: Total Fees */}
-            <div className="space-y-1">
-              <h4 className="font-bold text-sm text-center border-b pb-1 mb-1">Total Fees</h4>
-              <div className="text-xs text-center text-muted-foreground mb-1">(For {academicYear})</div>
-              <div className="p-2 space-y-1 bg-muted rounded-md">
-                <FeeSummaryRow label="Total Course Fee" value={student.original_total_fee} />
-                <FeeSummaryRow label="Total Scholarship" value={student.original_scholarship_amount} colorClass="text-orange-600" />
-                <Separator className="my-1"/>
-                <FeeSummaryRow label="Net Payable Fee" value={student.original_admission_fee} isBold={true} colorClass="text-primary" />
-              </div>
-            </div>
-
-            {/* Col 3: Fees Receipt Details */}
-            <div className="space-y-1">
-              <h4 className="font-bold text-sm text-center border-b pb-1 mb-1">Fees Receipt Details</h4>
-              <div className="text-xs text-center text-muted-foreground mb-1">(All Payments)</div>
-              <div className="max-h-60 overflow-y-auto border rounded-md">
-                <Table>
-                  <TableBody>
-                    {receiptPayments.length === 0 ? (
-                      <TableRow><TableCell className="p-2 h-10 text-xs text-center">No payments found.</TableCell></TableRow>
-                    ) : (
-                      receiptPayments.map(p => (
-                        <TableRow key={p.id}>
-                          <TableCell className="p-2">
-                            <div className="font-medium text-xs">{p.fees_type}</div>
-                            <div className="text-xs text-muted-foreground">{formatDate(p.created_at)}</div>
-                          </TableCell>
-                          <TableCell className="p-2 text-right font-medium text-xs">{formatCurrency(p.amount)}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            {/* Col 4: Student Receivable */}
-            <div className="space-y-1">
-              <h4 className="font-bold text-sm text-center border-b pb-1 mb-1">Student Receivable</h4>
-              <div className="text-xs text-center text-muted-foreground mb-1">(Summary)</div>
-              <div className="p-2 space-y-1 bg-muted rounded-md">
-                <FeeSummaryRow label="Net Payable (Tuition)" value={student.original_admission_fee} />
-                <FeeSummaryRow label="Total Paid (Tuition)" value={tuitionPaid} colorClass="text-green-600" />
-                <Separator className="my-1" />
-                <FeeSummaryRow 
-                  label="Remaining Due" 
-                  value={remainingDue} 
-                  isBold={true} 
-                  colorClass={remainingDue > 0 ? "text-destructive" : "text-green-600"}
-                />
-              </div>
-              <div className="p-2 space-y-1 bg-muted rounded-md mt-1">
-                <FeeSummaryRow label="Allocated Scholarship" value={student.original_scholarship_amount} />
-                <FeeSummaryRow label="Scholarship Used" value={scholarshipPaid} colorClass="text-green-600" />
-                <Separator className="my-1" />
-                <FeeSummaryRow 
-                  label="Remaining Scholarship" 
-                  value={remainingScholarship} 
-                  isBold={true} 
-                  colorClass={remainingScholarship > 0 ? "text-orange-600" : "text-green-600"}
-                />
-              </div>
-            </div>
-
+        
+        {/* --- 2. Global Financial Summary --- */}
+        <div className="p-3 border bg-background rounded-lg shadow-sm">
+          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Global Financial Summary</h3>
+          <p className="text-xs text-muted-foreground -mt-2 mb-2">
+            This summary only includes amounts from <strong>Active</strong> academic years.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-2 bg-muted rounded-md">
+            <InfoItem 
+              label="Total Net Payable" 
+              value={formatCurrency(globalSummary.totalNetPayable)} 
+            />
+            <InfoItem 
+              label="Total Paid" 
+              value={formatCurrency(globalSummary.totalPaid)} 
+            />
+            <InfoItem 
+              label="Total Scholarship" 
+              value={formatCurrency(globalSummary.totalScholarship)} 
+            />
+            <InfoItem 
+              label="Remaining Due" 
+              value={formatCurrency(globalSummary.totalRemaining)} 
+              className={`font-extrabold text-xl ${globalSummary.totalRemaining > 0 ? 'text-destructive' : 'text-green-600'}`}
+            />
           </div>
+        </div>
+
+
+        {/* --- 3. Academic Year Financial Breakdown --- */}
+        <div className="p-3 border bg-background rounded-lg shadow-sm">
+          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Academic Year Breakdown</h3>
+          
+          <div className="mb-2 grid grid-cols-4 w-full font-semibold text-sm text-muted-foreground border-b pb-1 px-4">
+              <span>Academic Year / Course</span>
+              <span className="text-center">Net Fee</span>
+              <span className="text-center">Paid</span>
+              <span className="text-right">Remaining</span>
+          </div>
+          
+          {academicYears.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No academic year enrollment records found for this student.
+            </div>
+          ) : (
+            <Accordion type="single" collapsible className="w-full">
+              {academicYears.map((year) => (
+                <AcademicYearFinancialCard 
+                  key={year.id} 
+                  year={year} 
+                  studentId={student.id} // ✅ Pass studentId for the link
+                />
+              ))}
+            </Accordion>
+          )}
+
         </div>
 
       </CardContent>
@@ -486,21 +643,21 @@ function StudentFeeDetailPage() {
   }
 
   return (
-    <div className="p-2 md:p-4"> {/* REDUCED PADDING */}
-      <div className="max-w-7xl mx-auto"> {/* Changed to max-w-7xl for wider view */}
+    <div className="p-2 md:p-4">
+      <div className="max-w-7xl mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="p-4"> {/* REDUCED PADDING */}
+          <CardHeader className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <Button variant="outline" size="icon" asChild>
-                {/* Go back to the add payment page */}
-                <Link href={`/student/fees/add?student_id=${studentId}&year=${academicYear}`}>
+                {/* Link back to the generic fees page/student list */}
+                <Link href={`/student/fees`}> 
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               </Button>
-              <CardTitle className="text-xl">Student Payment Details</CardTitle>
+              <CardTitle className="text-xl">Student Financial Ledger</CardTitle>
             </div>
             <CardDescription className="text-sm">
-              A complete financial and personal overview for this student for the academic year {academicYear}.
+              Complete financial and personal overview for **{student?.fullname || 'Loading...'}** (GR No: {studentId}).
             </CardDescription>
           </CardHeader>
           {renderContent()}
@@ -514,7 +671,7 @@ function StudentFeeDetailPage() {
 export default function StudentFeeDetailPageWrapper() {
   return (
     <Suspense fallback={<div className="flex justify-center items-center h-screen">
-      <Loader2 className="h-8 w-8 animate-spin" />
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>}>
       <StudentFeeDetailPage />
     </Suspense>

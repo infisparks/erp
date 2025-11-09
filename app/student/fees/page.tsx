@@ -38,17 +38,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator, 
 } from "@/components/ui/dropdown-menu"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
-import { cn } from "@/lib/utils"
 
 // --- Icons ---
 import {
@@ -61,32 +52,34 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
-  DollarSign,
+  DollarSign, // For Fees
   Filter,
-  ChevronsUpDown,
-  Check,
+  RotateCw, // For Promotion
+  CheckCircle, // For Status
+  FileSpreadsheet, // NEW: For Excel Download
+  ListTodo, // NEW: For Fees Detail
+  ClipboardList, // NEW: For Edit/View Detail
+  Menu, // General Action Icon
 } from "lucide-react"
 
 // --- PrimeReact Components ---
 import { Dropdown } from 'primereact/dropdown';
 
 // --- Type Definitions ---
-
-// --- UPDATED: For the main list (based on student_semesters) ---
 interface StudentEnrollment {
-  enrollment_id: string;      // student_semesters.id
-  student_id: string;         // students.id
-  academic_year_id: string; // student_academic_years.id
+  enrollment_id: string;      
+  student_id: string;         
+  academic_year_id: string; 
   fullname: string | null;
-  email: string | null; // --- FIXED: Added email ---
+  email: string | null; 
   roll_number: string | null;
   photo_path: string | null;
   course_name: string;
   academic_year_name: string;
   academic_year_session: string;
   semester_name: string;
-  status: string;             // from student_semesters
-  promotion_status: string;   // from student_semesters
+  status: string;             
+  promotion_status: string;   
 }
 
 // For filters
@@ -94,15 +87,6 @@ interface Stream { id: string; name: string; }
 interface Course { id: string; name: string; stream_id: string; }
 interface AcademicYear { id: string; name: string; course_id: string; } 
 interface Semester { id: string; name: string; academic_year_id: string; } 
-
-// For Combobox props
-interface SearchableSelectProps {
-  options: { label: string; value: string; }[];
-  value: string | null;
-  onChange: (value: string | null) => void;
-  placeholder: string;
-  disabled?: boolean;
-}
 
 // -------------------------------------------------------------------
 // 🚀 Reusable Helper Components 🚀
@@ -132,7 +116,7 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase
   )
 }
 
-// --- Helper Dropdown Component ---
+// --- Helper Dropdown Component (Using PrimeReact Dropdown for feature parity) ---
 const DropdownSelect: React.FC<{
   label: string;
   value: string | null;
@@ -164,14 +148,14 @@ export default function FeesManagementPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
-  const [students, setStudents] = useState<StudentEnrollment[]>([]) // UPDATED
-  const [loading, setLoading] = useState(true)
+  const [students, setStudents] = useState<StudentEnrollment[]>([])
+  const [loading, setLoading] = useState(false) // Set to false initially, fetchStudents handles it
   const [error, setError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   
   // --- Table State ---
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState("") // Global filter for the table
+  const [globalFilter, setGlobalFilter] = useState("") 
   const [sorting, setSorting] = useState<SortingState>([
     { id: "fullname", desc: false },
   ])
@@ -222,7 +206,7 @@ export default function FeesManagementPage() {
 
 
   // --- Data Fetching (Students) ---
-  const fetchStudents = useCallback(async (nameQuery: string, rollQuery: string) => {
+  const fetchStudents = useCallback(async (nameQuery: string, rollQuery: string, shouldApplyFilters: boolean = true) => {
     setLoading(true);
     setStatusMessage(null);
     setError(null);
@@ -252,97 +236,95 @@ export default function FeesManagementPage() {
           )
           `
         )
-        .eq('status', 'active') // Default to only active students
+        .eq('status', 'active') 
         .order("created_at", { ascending: false });
-        // Removed limit to allow filters to work on all data
 
-      // --- NEW Filter Logic ---
+      // --- Filter Logic ---
       let ayFilterIds: string[] | null = null;
-
-      // --- Filter by Stream (finds matching course_ids, then ay_ids) ---
-      if (selectedStream && !selectedCourse) { 
-        const { data: courseIdsData, error: cError } = await supabase
-          .from("courses")
-          .select("id")
-          .eq("stream_id", selectedStream);
-        if (cError) throw cError;
-        const courseIds = courseIdsData.map((c: { id: string }) => c.id);
-
-        if (courseIds.length > 0) {
-          const { data: ayIds, error: ayError } = await supabase
-            .from("student_academic_years")
-            .select("id")
-            .in("course_id", courseIds);
-          if (ayError) throw ayError;
-          ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
-        } else {
-          ayFilterIds = [];
-        }
-      }
-
-      // --- Filter by Course (finds matching ay_ids) ---
-      if (selectedCourse) {
-        const { data: ayIds, error } = await supabase
-          .from("student_academic_years")
-          .select("id")
-          .eq("course_id", selectedCourse);
-        if (error) throw error;
-        ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
-      }
       
-      // --- FIXED: Filter by Academic Year ---
-      if (selectedAcademicYear) {
-        // Find the *name* of the template year (e.g., "First Year")
-        const yearName = allAcademicYears.find(ay => ay.id === selectedAcademicYear)?.name;
-        if (yearName) {
+      if (shouldApplyFilters) {
+          // Stream Filter
+          if (selectedStream && !selectedCourse) { 
+            const { data: courseIdsData, error: cError } = await supabase
+              .from("courses")
+              .select("id")
+              .eq("stream_id", selectedStream);
+            if (cError) throw cError;
+            const courseIds = courseIdsData.map((c: { id: string }) => c.id);
+
+            if (courseIds.length > 0) {
+              const { data: ayIds, error: ayError } = await supabase
+                .from("student_academic_years")
+                .select("id")
+                .in("course_id", courseIds);
+              if (ayError) throw ayError;
+              ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
+            } else {
+              ayFilterIds = [];
+            }
+          }
+
+          // Course Filter
+          if (selectedCourse) {
             const { data: ayIds, error } = await supabase
               .from("student_academic_years")
               .select("id")
-              .eq("academic_year_name", yearName);
+              .eq("course_id", selectedCourse);
             if (error) throw error;
-            
-            const matchingIds = ayIds.map((ay: { id: string }) => ay.id);
-            
-            // If filters were already applied, find the intersection
-            if (ayFilterIds) {
-              ayFilterIds = ayFilterIds.filter(id => matchingIds.includes(id));
+            ayFilterIds = ayIds.map((ay: { id: string }) => ay.id);
+          }
+          
+          // Academic Year Filter
+          if (selectedAcademicYear) {
+              const yearName = allAcademicYears.find(ay => ay.id === selectedAcademicYear)?.name;
+              if (yearName) {
+                  const { data: ayIds, error } = await supabase
+                    .from("student_academic_years")
+                    .select("id")
+                    .eq("academic_year_name", yearName);
+                  if (error) throw error;
+                  
+                  const matchingIds = ayIds.map((ay: { id: string }) => ay.id);
+                  
+                  if (ayFilterIds) {
+                    ayFilterIds = ayFilterIds.filter(id => matchingIds.includes(id));
+                  } else {
+                    ayFilterIds = matchingIds;
+                  }
+              } else {
+                ayFilterIds = [];
+              }
+          }
+
+          // Apply the Academic Year ID filter
+          if (ayFilterIds !== null) {
+            if (ayFilterIds.length === 0) {
+              query = query.eq("student_academic_year_id", "0"); // Use string '0' for UUID mismatch
             } else {
-              ayFilterIds = matchingIds;
+              query = query.in("student_academic_year_id", ayFilterIds);
             }
-        } else {
-          ayFilterIds = []; // No year name found, so no results
-        }
-      }
+          }
+          
+          // Semester Filter
+          if (selectedSemester) {
+            query = query.eq("semester_id", selectedSemester);
+          }
+      } // end if (shouldApplyFilters)
 
-      // Apply the Academic Year ID filter (which is BIGINT)
-      if (ayFilterIds !== null) {
-        if (ayFilterIds.length === 0) {
-          query = query.eq("student_academic_year_id", 0); // Force no results (use a non-existent bigint ID)
-        } else {
-          query = query.in("student_academic_year_id", ayFilterIds);
-        }
-      }
-      
-      // --- Filter by Semester (direct UUID) ---
-      if (selectedSemester) {
-        query = query.eq("semester_id", selectedSemester);
-      }
-
-      // --- Add Search Queries ---
+      // --- Add Search Queries (Always apply for dedicated search) ---
       if (nameQuery) {
-        query = query.ilike('students.fullname', `%${nameQuery}%`);
+        // Use full-text search index if available, or ilike
+        query = query.ilike('student.fullname', `%${nameQuery}%`);
       }
       if (rollQuery) {
-        query = query.ilike('students.roll_number', `%${rollQuery}%`);
+        query = query.ilike('student.roll_number', `%${rollQuery}%`);
       }
-      // --- End of New Logic ---
 
       const { data, error } = await query;
       if (error) throw error;
       
       if (data) {
         const flattenedData: StudentEnrollment[] = data.map((item: any) => {
-          // --- ADDED Safety Check ---
           if (!item.student || !item.academic_year || !item.semester) return null; 
           
           return {
@@ -360,11 +342,15 @@ export default function FeesManagementPage() {
             status: item.status,
             promotion_status: item.promotion_status,
           }
-        }).filter((s: StudentEnrollment | null): s is StudentEnrollment => s !== null); // Filter out any nulls
+        }).filter((s: StudentEnrollment | null): s is StudentEnrollment => s !== null);
 
         setStudents(flattenedData);
-        if (flattenedData.length === 0 && (nameQuery || rollQuery || selectedSemester)) {
-          setStatusMessage({ type: 'error', message: 'No students found matching your criteria.' });
+        
+        // Only show message if no global search was performed, otherwise the table handles it
+        if (flattenedData.length === 0 && (selectedStream || selectedCourse || selectedAcademicYear || selectedSemester)) {
+             setStatusMessage({ type: 'error', message: 'No students found matching the selected filters.' });
+        } else if (flattenedData.length === 0 && (nameQuery || rollQuery)) {
+            setStatusMessage({ type: 'error', message: 'No student found with that name or roll number.' });
         }
       }
     } catch (err: any) {
@@ -373,7 +359,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, selectedStream, selectedCourse, selectedAcademicYear, selectedSemester, allAcademicYears]); // Re-run when filters change
+  }, [supabase, selectedStream, selectedCourse, selectedAcademicYear, selectedSemester, allAcademicYears]); 
   
   // --- Initial Config Fetch (Filters) ---
   useEffect(() => {
@@ -408,12 +394,13 @@ export default function FeesManagementPage() {
 
   // --- Initial data load ---
   useEffect(() => {
-    if (!loadingFilters) { // Only run after filters are loaded
-        fetchStudents("", ""); // Load initial list (latest 20 active)
+    if (!loadingFilters) {
+        // Load initial list (no filters, no search)
+        fetchStudents("", "", false); 
     }
-  }, [fetchStudents, loadingFilters]); // Depends on filters being loaded
+  }, [fetchStudents, loadingFilters]); 
 
-  // --- FIXED: Add missing filter handlers ---
+  // --- Filter Handlers ---
   const handleStreamChange = (value: string | null) => {
     setSelectedStream(value);
     setSelectedCourse(null);
@@ -435,10 +422,11 @@ export default function FeesManagementPage() {
   const handleSemesterChange = (value: string | null) => {
     setSelectedSemester(value);
   };
-  // --- End of fixed handlers ---
 
+  // --- Search and Action Handlers ---
   const handleFilterSearch = () => {
-    fetchStudents(studentSearch, rollNumberSearch);
+    // Triggers a refetch with current filters and search terms
+    fetchStudents(studentSearch, rollNumberSearch, true); 
   }
   
   const handleFilterClear = () => {
@@ -450,9 +438,55 @@ export default function FeesManagementPage() {
     setRollNumberSearch("");
     setGlobalFilter("");
     
-    // Refetch the default list
-    fetchStudents("", "");
+    // Refetch the default list (no filters, no search)
+    fetchStudents("", "", false);
   }
+  
+  // --- NEW: Excel Export Handler ---
+  const handleExportToExcel = () => {
+    if (students.length === 0) {
+        setStatusMessage({ type: 'error', message: 'No data to export. Please filter and search for students first.' });
+        return;
+    }
+
+    // In a real application, you would use a library like `xlsx` (SheetJS)
+    // or call an API endpoint to generate a file server-side.
+    console.log("Exporting current students to Excel:", students);
+    
+    // Placeholder logic for demonstration:
+    const headers = ["Full Name", "Email", "Roll Number", "Course", "Academic Year", "Semester", "Status", "Promotion Status"];
+    const csvContent = [
+        headers.join(","),
+        ...students.map(s => 
+            [
+                `"${s.fullname}"`, 
+                s.email, 
+                s.roll_number, 
+                `"${s.course_name}"`, 
+                `"${s.academic_year_name} (${s.academic_year_session})"`, 
+                s.semester_name, 
+                s.status, 
+                s.promotion_status
+            ].join(",")
+        )
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) { 
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "student_fees_export_" + new Date().toISOString().slice(0, 10) + ".csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setStatusMessage({ type: 'success', message: `Successfully exported ${students.length} records to CSV/Excel.` });
+    } else {
+        setStatusMessage({ type: 'error', message: 'Your browser does not support automatic downloads. Please copy the data manually.' });
+    }
+  };
+
 
   // --- Table Columns Definition ---
   const columns: ColumnDef<StudentEnrollment>[] = [
@@ -474,7 +508,6 @@ export default function FeesManagementPage() {
             <StudentAvatar src={student.photo_path} alt={student.fullname} supabase={supabase} />
             <div>
               <div className="font-medium">{student.fullname || "N/A"}</div>
-              {/* --- FIXED: Added email --- */}
               <div className="text-xs text-muted-foreground">{student.email}</div>
             </div>
           </div>
@@ -522,17 +555,60 @@ export default function FeesManagementPage() {
     },
     {
       id: "actions",
+      header: "Actions",
       cell: ({ row }) => {
         const student = row.original
         return (
           <div className="text-right">
-            <Button asChild size="sm">
-              {/* --- UPDATED: Only send student_id --- */}
-              <Link href={`/student/fees/add?student_id=${student.student_id}`}>
-                <DollarSign className="mr-2 h-4 w-4" />
-                Add / View Payments
-              </Link>
-            </Button>
+            {/* --- UPDATED: Use DropdownMenu for actions with specific icons --- */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <span className="sr-only">Open menu</span>
+                  <Menu className="h-4 w-4" /> {/* Changed to Menu icon */}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* 1. Add / View Payments */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/student/fees/add?student_id=${student.student_id}`} className="flex items-center">
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    <span>Add / View Payments</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* 2. Fees Detail */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/student/fees/detail?student_id=${student.student_id}`} className="flex items-center">
+                    <ListTodo className="mr-2 h-4 w-4" /> {/* Specific icon for detail */}
+                    <span>Fees Detail</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* 3. Promotion Management */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/student/promotion?student_id=${student.student_id}`} className="flex items-center">
+                    <RotateCw className="mr-2 h-4 w-4" />
+                    <span>Manage Promotion</span>
+                  </Link>
+                </DropdownMenuItem>
+                {/* 4. Status Management */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/student/status?student_id=${student.student_id}`} className="flex items-center">
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    <span>Manage Status</span>
+                  </Link>
+                </DropdownMenuItem>
+                {/* 5. Edit/View Detail */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/student/form/detail?student_id=${student.student_id}&mode=view`} className="flex items-center">
+                    <ClipboardList className="mr-2 h-4 w-4" /> {/* Specific icon for detail */}
+                    <span>Edit/View Detail</span>
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+              
+            </DropdownMenu>
           </div>
         )
       },
@@ -572,7 +648,7 @@ export default function FeesManagementPage() {
         </div>
       </div>
 
-      {/* 2. Error Message */}
+      {/* 2. Error/Status Messages */}
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -593,9 +669,9 @@ export default function FeesManagementPage() {
         <CardHeader>
           <CardTitle>Find Student</CardTitle>
           {/* --- UPDATED: Filters + Search --- */}
-          <div className="py-4 space-y-3">
+          <div className="py-4 space-y-4">
+            {/* Filter Dropdowns */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* --- FIXED: Added onChange handlers --- */}
               <DropdownSelect
                 label="Filter by Stream"
                 options={streamOptions}
@@ -629,34 +705,53 @@ export default function FeesManagementPage() {
                 disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
-            <div className="flex flex-col md:flex-row gap-4 justify-between pt-2">
-              <div className="relative w-full md:max-w-xs">
-                <Label htmlFor="name-search">Search by Name</Label>
-                <Input
-                  id="name-search"
-                  type="search"
-                  placeholder="Search name..."
-                  className="w-full"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                />
+
+            {/* Search Inputs and Action Buttons */}
+            <div className="flex flex-col md:flex-row gap-3 justify-between pt-2 items-end">
+              {/* Search Inputs */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:max-w-xl">
+                  <div className="relative w-full">
+                    <Label htmlFor="name-search">Search by Name</Label>
+                    <Input
+                      id="name-search"
+                      type="search"
+                      placeholder="Search name..."
+                      className="w-full"
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="relative w-full">
+                    <Label htmlFor="roll-search">Search by Roll No.</Label>
+                    <Input
+                      id="roll-search"
+                      type="search"
+                      placeholder="Search roll number..."
+                      className="w-full"
+                      value={rollNumberSearch}
+                      onChange={(e) => setRollNumberSearch(e.target.value)}
+                    />
+                  </div>
               </div>
-              <div className="relative w-full md:max-w-xs">
-                <Label htmlFor="roll-search">Search by Roll No.</Label>
-                <Input
-                  id="roll-search"
-                  type="search"
-                  placeholder="Search roll number..."
-                  className="w-full"
-                  value={rollNumberSearch}
-                  onChange={(e) => setRollNumberSearch(e.target.value)}
-                />
-              </div>
-              <div className="flex gap-2 justify-end items-end">
+              
+              {/* Action Buttons */}
+              <div className="flex gap-2 justify-end w-full md:w-auto">
+                {/* NEW: Export Button */}
+                <Button 
+                    variant="outline" 
+                    onClick={handleExportToExcel} 
+                    disabled={loading || students.length === 0}
+                    className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export to XL
+                </Button>
+                {/* Clear Button */}
                 <Button variant="outline" onClick={handleFilterClear} disabled={loading}>
                   <XCircle className="h-4 w-4 mr-2" />
                   Clear
                 </Button>
+                {/* Search Button (Triggers fetch with all filters/search) */}
                 <Button onClick={handleFilterSearch} disabled={loading}>
                   {loading ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
