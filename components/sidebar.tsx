@@ -218,6 +218,13 @@ export default function Sidebar({ user }: SidebarProps) {
       href: "/dashboard",
     },
     {
+  type: "link",
+  icon: Users,
+  label: "Admin",
+  href: "/admin",
+},
+  
+    {
       type: "section",
       title: "Admission",
       icon: FileText,
