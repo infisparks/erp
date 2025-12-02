@@ -223,6 +223,12 @@ export default function Sidebar({ user }: SidebarProps) {
   label: "Admin",
   href: "/admin",
 },
+ {
+  type: "link",
+  icon: Users,
+  label: "Attendance",
+  href: "/attendances",
+},
   
     {
       type: "section",
