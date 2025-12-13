@@ -30,7 +30,7 @@ import Link from "next/link"
 
 export default function StudentDashboard() {
     const [student] = useState({
-        name: "Rahul Sharma",
+        name: "Shaikh Mudassir",
         id: "STU-2024-001",
         phone: "+91 98765 43210",
         course: "B.Tech Computer Science",

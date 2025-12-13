@@ -5,7 +5,7 @@ import Link from "next/link"
 
 export default function ProfilePage() {
     const student = {
-        name: "Rahul Sharma",
+        name: "Shaikh Mudassir",
         id: "STU-2024-001",
         course: "B.Tech Computer Science",
         semester: "6th Semester",
