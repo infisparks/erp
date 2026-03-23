@@ -67,6 +67,11 @@ import {
     Check,
     CalendarIcon,
     ChevronLeft,
+    Lock,
+    Unlock,
+    ShieldCheck,
+    ShieldAlert,
+    CheckSquare,
 } from "lucide-react"
 
 // --- Type Definitions ---
@@ -82,7 +87,7 @@ interface StudentDocument {
 
 interface StudentDetail {
     // From students
-    id: string // This is students.id
+    id: number // This is students.id (bigint)
     user_id: string
     created_at: string 
     firstname: string
@@ -132,9 +137,12 @@ interface StudentDetail {
     registration_no: string | null
     merit_no: string | null
     roll_number: string;
+    is_locked: boolean;
+    is_verifiedby_admin: boolean;
+    is_verifiedby_examcell: boolean;
 
     // From student_semesters
-    enrollment_id: string // student_semesters.id
+    enrollment_id: number // student_semesters.id (bigint)
     "rollNumber": string // This maps to students.roll_number
     status: string // from student_semesters (e.g., 'active')
     promotion_status: string
@@ -1511,6 +1519,24 @@ function StudentDetailContent() {
         )
     }
 
+    const student_status_badges = (
+        <div className="flex flex-wrap gap-2 mt-2">
+            {studentData.is_locked && (
+                <Badge variant="destructive">
+                    <Lock className="h-3 w-3 mr-1" /> Profile Locked
+                </Badge>
+            )}
+            <Badge variant={studentData.is_verifiedby_admin ? "default" : "secondary"} className="border">
+                {studentData.is_verifiedby_admin ? <ShieldCheck className="h-3 w-3 mr-1" /> : <ShieldAlert className="h-3 w-3 mr-1" />}
+                Admin: {studentData.is_verifiedby_admin ? "Verified" : "Pending"}
+            </Badge>
+            <Badge variant={studentData.is_verifiedby_examcell ? "secondary" : "secondary"} className="border">
+                {studentData.is_verifiedby_examcell ? <CheckSquare className="h-3 w-3 mr-1" /> : <ShieldAlert className="h-3 w-3 mr-1" />}
+                Exam Cell: {studentData.is_verifiedby_examcell ? "Approved" : "Pending"}
+            </Badge>
+        </div>
+    );
+
     return (
         <div className="p-4 md:p-8 space-y-6">
             <div className="flex justify-between items-center border-b pb-4">
@@ -1521,6 +1547,7 @@ function StudentDetailContent() {
                     <p className="text-lg text-muted-foreground">
                         Roll No: **{studentData['rollNumber']}** | ID: {studentData.id}
                     </p>
+                    {student_status_badges}
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => router.push('/student')}>
@@ -1541,7 +1568,11 @@ function StudentDetailContent() {
                     )}
 
                     {mode === 'view' ? (
-                        <Button onClick={() => setMode('edit')}>
+                        <Button 
+                            onClick={() => setMode('edit')}
+                            disabled={studentData.is_locked}
+                            title={studentData.is_locked ? "Profile is locked by admin" : ""}
+                        >
                             <Edit className="h-4 w-4 mr-2" />
                             Edit Enrollment
                         </Button>

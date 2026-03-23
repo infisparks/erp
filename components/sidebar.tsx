@@ -223,12 +223,6 @@ export default function Sidebar({ user }: SidebarProps) {
   label: "Admin",
   href: "/admin",
 },
- {
-  type: "link",
-  icon: Users,
-  label: "Attendance",
-  href: "/attendances",
-},
   
     {
       type: "section",
@@ -305,8 +299,8 @@ export default function Sidebar({ user }: SidebarProps) {
     {
       type: "link",
       icon: CalendarCheck,
-      label: "Student Attendance",
-      href: "/attandance",
+      label: "Attendance Management",
+      href: "/attendance",
     },
   ]
 

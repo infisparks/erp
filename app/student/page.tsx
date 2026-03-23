@@ -61,6 +61,10 @@ import {
   ClipboardList, // NEW: For Edit/View Detail
   Menu, // General Action Icon
   CheckSquare, // ✅ NEW: For Registration
+  Lock,
+  Unlock,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react"
 
 // --- PrimeReact Components ---
@@ -68,9 +72,9 @@ import { Dropdown } from "primereact/dropdown"
 
 // --- Type Definitions ---
 interface StudentEnrollment {
-  enrollment_id: string
-  student_id: string
-  academic_year_id: string
+  enrollment_id: number; // student_academic_years.id
+  student_id: number;    // students.id
+  academic_year_id: number; // student_academic_years.id
   fullname: string | null
   email: string | null
   roll_number: string | null
@@ -78,13 +82,12 @@ interface StudentEnrollment {
   course_name: string
   academic_year_name: string
   academic_year_session: string
-  semester_name: string
-  status: string // This is from student_semesters
-  promotion_status: string
-
-  // --- Fields from student_academic_years ---
-  academic_year_status: string | null // The 'status' from the parent academic year
-  is_registered: boolean // The 'is_registered' from the parent academic year
+  is_registered: boolean
+  is_enrollment_verified: boolean // from student_academic_years.is_verified_by_admin
+  is_verifiedby_admin: boolean // from students.is_verifiedby_admin
+  is_verifiedby_examcell: boolean
+  is_locked: boolean
+  sequence: number // From academic_years
 }
 
 // For filters
@@ -101,11 +104,7 @@ interface AcademicYear {
   id: string
   name: string
   course_id: string
-}
-interface Semester {
-  id: string
-  name: string
-  academic_year_id: string
+  sequence: number
 }
 
 // -------------------------------------------------------------------
@@ -204,7 +203,6 @@ export default function FeesManagementPage() {
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
-  const [allSemesters, setAllSemesters] = useState<Semester[]>([])
 
   const [loadingFilters, setLoadingFilters] = useState(true)
 
@@ -225,15 +223,8 @@ export default function FeesManagementPage() {
     if (!selectedCourse) return []
     return allAcademicYears
       .filter((ay) => ay.course_id === selectedCourse)
-      .sort(sortByName)
+      .sort((a, b) => a.sequence - b.sequence) // Sort by sequence
   }, [allAcademicYears, selectedCourse])
-
-  const semesterOptions = useMemo(() => {
-    if (!selectedAcademicYear) return []
-    return allSemesters
-      .filter((s) => s.academic_year_id === selectedAcademicYear)
-      .sort(sortByName)
-  }, [allSemesters, selectedAcademicYear])
 
   // --- Data Fetching (Students) ---
   const fetchStudents = useCallback(
@@ -248,180 +239,125 @@ export default function FeesManagementPage() {
 
       try {
         let query = supabase
-          .from("student_semesters")
+          .from("student_academic_years")
           .select(
             `
-          id, 
-          status,
-          promotion_status,
-          student_academic_year_id,
-          student:students (
-            id,
-            fullname,
-            email,
-            photo_path,
-            roll_number
-          ),
-          semester:semesters ( name ),
-          academic_year:student_academic_years (
             id,
             academic_year_name,
             academic_year_session,
-            status,
+            is_verified_by_admin,
             is_registered,
+            student:students (
+              id,
+              fullname,
+              email,
+              photo_path,
+              roll_number,
+              is_verifiedby_admin,
+              is_verifiedby_examcell,
+              is_locked
+            ),
             course:courses ( name )
+            `,
           )
-          `,
-          )
-          .eq("status", "active")
           .order("created_at", { ascending: false })
 
         // --- Filter Logic ---
-        let ayFilterIds: string[] | null = null
-
         if (shouldApplyFilters) {
-          // Stream Filter
           if (selectedStream && !selectedCourse) {
-            const { data: courseIdsData, error: cError } = await supabase
+            const { data: courseIdsData } = await supabase
               .from("courses")
               .select("id")
               .eq("stream_id", selectedStream)
-            if (cError) throw cError
-            const courseIds = courseIdsData.map((c: { id: string }) => c.id)
-
-            if (courseIds.length > 0) {
-              const { data: ayIds, error: ayError } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .in("course_id", courseIds)
-              if (ayError) throw ayError
-              ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
-            } else {
-              ayFilterIds = []
-            }
+            const courseIds = courseIdsData?.map((c: { id: string }) => c.id) || []
+            if (courseIds.length > 0) query = query.in("course_id", courseIds)
           }
 
-          // Course Filter
           if (selectedCourse) {
-            const { data: ayIds, error } = await supabase
-              .from("student_academic_years")
-              .select("id")
-              .eq("course_id", selectedCourse)
-            if (error) throw error
-            ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
+            query = query.eq("course_id", selectedCourse)
           }
 
-          // Academic Year Filter
           if (selectedAcademicYear) {
             const yearName = allAcademicYears.find(
               (ay) => ay.id === selectedAcademicYear,
             )?.name
-            if (yearName) {
-              const { data: ayIds, error } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .eq("academic_year_name", yearName)
-              if (error) throw error
-
-              const matchingIds = ayIds.map((ay: { id: string }) => ay.id)
-
-              if (ayFilterIds) {
-                ayFilterIds = ayFilterIds.filter((id) =>
-                  matchingIds.includes(id),
-                )
-              } else {
-                ayFilterIds = matchingIds
-              }
-            } else {
-              ayFilterIds = []
-            }
+            if (yearName) query = query.eq("academic_year_name", yearName)
           }
-
-          // Apply the Academic Year ID filter
-          if (ayFilterIds !== null) {
-            if (ayFilterIds.length === 0) {
-              query = query.eq("student_academic_year_id", "0") // Use string '0' for UUID mismatch
-            } else {
-              query = query.in("student_academic_year_id", ayFilterIds)
-            }
-          }
-
-          // Semester Filter
-          if (selectedSemester) {
-            query = query.eq("semester_id", selectedSemester)
-          }
-        } // end if (shouldApplyFilters)
-
-        // --- Add Search Queries (Always apply for dedicated search) ---
-        if (nameQuery) {
-          // Use full-text search index if available, or ilike
-          query = query.ilike("student.fullname", `%${nameQuery}%`)
         }
-        if (rollQuery) {
-          query = query.ilike("student.roll_number", `%${rollQuery}%`)
-        }
+
+        // --- Search Queries ---
+        if (nameQuery) query = query.ilike("student.fullname", `%${nameQuery}%`)
+        if (rollQuery) query = query.ilike("student.roll_number", `%${rollQuery}%`)
 
         const { data, error } = await query
         if (error) throw error
 
         if (data) {
-          const flattenedData: StudentEnrollment[] = data
+          // 1. Flatten Data
+          let flattenedData: StudentEnrollment[] = data
             .map((item: any) => {
-              if (!item.student || !item.academic_year || !item.semester)
-                return null
+              if (!item.student) return null
+              
+              // Get sequence for the year
+              const ayInfo = allAcademicYears.find(ay => ay.name === item.academic_year_name && (selectedCourse ? ay.course_id === selectedCourse : true));
 
               return {
                 enrollment_id: item.id,
                 student_id: item.student.id,
-                academic_year_id: item.student_academic_year_id,
+                academic_year_id: item.id,
                 fullname: item.student.fullname,
                 email: item.student.email,
                 roll_number: item.student.roll_number,
                 photo_path: item.student.photo_path,
-                course_name: item.academic_year?.course?.name || "N/A",
-                academic_year_name:
-                  item.academic_year?.academic_year_name || "N/A",
-                academic_year_session:
-                  item.academic_year?.academic_year_session || "N/A",
-                semester_name: item.semester?.name || "N/A",
-                status: item.status,
-                promotion_status: item.promotion_status,
-
-                // --- Map the new values ---
-                academic_year_status: item.academic_year?.status || null,
-                is_registered: item.academic_year?.is_registered ?? false, // Default to false if null/undefined
+                course_name: item.course?.name || "N/A",
+                academic_year_name: item.academic_year_name || "N/A",
+                academic_year_session: item.academic_year_session || "N/A",
+                is_enrollment_verified: item.is_verified_by_admin ?? false,
+                is_registered: item.is_registered ?? false,
+                is_verifiedby_admin: item.student?.is_verifiedby_admin ?? false,
+                is_verifiedby_examcell: item.student?.is_verifiedby_examcell ?? false,
+                is_locked: item.student?.is_locked ?? false,
+                sequence: ayInfo?.sequence ?? 0
               }
             })
-            .filter(
-              (s: StudentEnrollment | null): s is StudentEnrollment => s !== null,
-            )
+            .filter((s: StudentEnrollment): s is StudentEnrollment => s !== null)
 
-          setStudents(flattenedData)
+          // 2. Filter for CURRENT Position per Student
+          // Logic: Highest sequence that is verified BY ADMIN. 
+          // If none are verified, fallback to the record with sequence 0 or the first one found.
+          const studentMap = new Map<number, StudentEnrollment>()
+          flattenedData.forEach(enroll => {
+            const existing = studentMap.get(enroll.student_id)
+            
+            if (!existing) {
+              studentMap.set(enroll.student_id, enroll)
+            } else {
+              // If new one is verified and existing is not -> Replace
+              if (enroll.is_enrollment_verified && !existing.is_enrollment_verified) {
+                studentMap.set(enroll.student_id, enroll)
+              } 
+              // If both verified or both unverified, take the one with higher sequence
+              else if (enroll.is_enrollment_verified === existing.is_enrollment_verified) {
+                if (enroll.sequence > existing.sequence) {
+                  studentMap.set(enroll.student_id, enroll)
+                }
+              }
+            }
+          })
+          
+          const finalData = Array.from(studentMap.values())
+          setStudents(finalData)
 
-          // Only show message if no global search was performed, otherwise the table handles it
-          if (
-            flattenedData.length === 0 &&
-            (selectedStream ||
-              selectedCourse ||
-              selectedAcademicYear ||
-              selectedSemester)
-          ) {
+          if (finalData.length === 0 && (shouldApplyFilters || nameQuery || rollQuery)) {
             setStatusMessage({
               type: "error",
-              message: "No students found matching the selected filters.",
-            })
-          } else if (flattenedData.length === 0 && (nameQuery || rollQuery)) {
-            setStatusMessage({
-              type: "error",
-              message: "No student found with that name or roll number.",
+              message: "No students found matching the selected criteria.",
             })
           }
         }
       } catch (err: any) {
         console.error("Error fetching students:", err)
-        setError(
-          err.message || "An unknown error occurred while fetching students.",
-        )
+        setError(err.message || "An error occurred while fetching students.")
       } finally {
         setLoading(false)
       }
@@ -441,23 +377,20 @@ export default function FeesManagementPage() {
     const fetchAllConfig = async () => {
       setLoadingFilters(true)
       try {
-        const [streamData, courseData, ayData, semData] = await Promise.all([
+        const [streamData, courseData, ayData] = await Promise.all([
           supabase.from("streams").select("*"),
           supabase.from("courses").select("*"),
-          supabase.from("academic_years").select("id, name, course_id"),
-          supabase.from("semesters").select("id, name, academic_year_id"),
+          supabase.from("academic_years").select("id, name, course_id, sequence"),
         ])
 
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
         if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[])
-        if (semData.data) setAllSemesters(semData.data as Semester[])
 
         const errors = [
           streamData.error,
           courseData.error,
           ayData.error,
-          semData.error,
         ].filter(Boolean)
         if (errors.length > 0) {
           throw new Error(errors.map((e) => (e as Error).message).join(", "))
@@ -513,7 +446,6 @@ export default function FeesManagementPage() {
     setSelectedStream(null)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
-    setSelectedSemester(null)
     setStudentSearch("")
     setRollNumberSearch("")
     setGlobalFilter("")
@@ -544,9 +476,7 @@ export default function FeesManagementPage() {
       "Roll Number",
       "Course",
       "Academic Year",
-      "Semester",
-      "Status",
-      "Promotion Status",
+      "Admin Enrollment Verified",
     ]
     const csvContent = [
       headers.join(","),
@@ -557,9 +487,7 @@ export default function FeesManagementPage() {
           s.roll_number,
           `"${s.course_name}"`,
           `"${s.academic_year_name} (${s.academic_year_session})"`,
-          s.semester_name,
-          s.status,
-          s.promotion_status,
+          s.is_enrollment_verified ? "YES" : "NO",
         ].join(","),
       ),
     ].join("\n")
@@ -592,6 +520,43 @@ export default function FeesManagementPage() {
     }
   }
 
+  // --- NEW: Toggle Status Handler ---
+  const toggleStatus = async (
+    studentId: number,
+    field: "is_verifiedby_admin" | "is_verifiedby_examcell" | "is_locked",
+    currentValue: boolean,
+  ) => {
+    try {
+      setLoading(true)
+      const { error } = await supabase
+        .from("students")
+        .update({ [field]: !currentValue })
+        .eq("id", studentId)
+
+      if (error) throw error
+
+      // Optimistically update the UI or refetch
+      setStudents((prev) =>
+        prev.map((s) => {
+          if (s.student_id === studentId) {
+            return { ...s, [field]: !currentValue }
+          }
+          return s
+        }),
+      )
+
+      setStatusMessage({
+        type: "success",
+        message: `Successfully ${!currentValue ? "enabled" : "disabled"} ${field.replace("is_", "").replace("_", " ")}.`,
+      })
+    } catch (err: any) {
+      console.error("Error updating status:", err)
+      setError(err.message || "Failed to update status")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // --- Table Columns Definition ---
   const columns: ColumnDef<StudentEnrollment>[] = [
     {
@@ -609,9 +574,7 @@ export default function FeesManagementPage() {
         const student = row.original
 
         // --- Logic for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
+        const isRegistrationPending = !student.is_registered
 
         return (
           <div className="flex items-center gap-3">
@@ -648,7 +611,7 @@ export default function FeesManagementPage() {
         <div>
           <div className="font-medium">{row.original.course_name}</div>
           <div className="text-xs text-muted-foreground">
-            {row.original.academic_year_name} ({row.original.semester_name})
+            {row.original.academic_year_name}
           </div>
           <div className="text-xs text-muted-foreground">
             {row.original.academic_year_session}
@@ -657,28 +620,84 @@ export default function FeesManagementPage() {
       ),
     },
     {
-      accessorKey: "promotion_status",
-      header: "Promotion Status",
+      accessorKey: "is_enrollment_verified",
+      header: "Enrollment",
       cell: ({ row }) => (
         <Badge
           variant={
-            row.original.promotion_status === "Eligible" ? "default" : "secondary"
+            row.original.is_enrollment_verified
+              ? "default"
+              : "secondary"
           }
           className="capitalize"
         >
-          {row.original.promotion_status}
+          {row.original.is_enrollment_verified ? "Verified" : "Pending"}
         </Badge>
       ),
     },
     {
-      accessorKey: "status",
-      header: "Enrollment Status",
+      accessorKey: "is_verifiedby_admin",
+      header: "Admin Verify",
       cell: ({ row }) => (
         <Badge
-          variant={row.original.status === "active" ? "default" : "destructive"}
-          className="capitalize"
+          variant={row.original.is_verifiedby_admin ? "default" : "destructive"}
+          className="flex w-fit items-center gap-1 capitalize"
         >
-          {row.original.status}
+          {row.original.is_verifiedby_admin ? (
+            <>
+              <ShieldCheck className="h-3 w-3" />
+              Verified
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="h-3 w-3" />
+              Pending
+            </>
+          )}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "is_verifiedby_examcell",
+      header: "Exam Cell",
+      cell: ({ row }) => (
+        <Badge
+          variant={row.original.is_verifiedby_examcell ? "secondary" : "destructive"}
+          className="flex w-fit items-center gap-1 capitalize"
+        >
+          {row.original.is_verifiedby_examcell ? (
+            <>
+              <CheckSquare className="h-3 w-3" />
+              Approved
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="h-3 w-3" />
+              Pending
+            </>
+          )}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "is_locked",
+      header: "Profile",
+      cell: ({ row }) => (
+        <Badge
+          variant={row.original.is_locked ? "destructive" : "secondary"}
+          className="flex w-fit items-center gap-1 capitalize"
+        >
+          {row.original.is_locked ? (
+            <>
+              <Lock className="h-3 w-3" />
+              Locked
+            </>
+          ) : (
+            <>
+              <Unlock className="h-3 w-3" />
+              Unlocked
+            </>
+          )}
         </Badge>
       ),
     },
@@ -689,9 +708,7 @@ export default function FeesManagementPage() {
         const student = row.original
         
         // --- ✅ NEW: Check for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
+        const isRegistrationPending = !student.is_registered
 
         return (
           <div className="text-right">
@@ -771,6 +788,60 @@ export default function FeesManagementPage() {
                     <ClipboardList className="mr-2 h-4 w-4" />
                     <span>Edit/View Detail</span>
                   </Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                
+                {/* --- ✅ NEW: Admin Status Controls --- */}
+                <DropdownMenuItem
+                  onClick={() => toggleStatus(student.student_id, "is_verifiedby_admin", student.is_verifiedby_admin)}
+                  className="flex items-center cursor-pointer"
+                >
+                  {student.is_verifiedby_admin ? (
+                    <>
+                      <ShieldAlert className="mr-2 h-4 w-4 text-red-500" />
+                      <span>Unverify (Admin)</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="mr-2 h-4 w-4 text-green-500" />
+                      <span>Verify (Admin)</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => toggleStatus(student.student_id, "is_verifiedby_examcell", student.is_verifiedby_examcell)}
+                  className="flex items-center cursor-pointer"
+                >
+                  {student.is_verifiedby_examcell ? (
+                    <>
+                      <ShieldAlert className="mr-2 h-4 w-4 text-red-500" />
+                      <span>Unverify (Exam Cell)</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="mr-2 h-4 w-4 text-blue-500" />
+                      <span>Verify (Exam Cell)</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => toggleStatus(student.student_id, "is_locked", student.is_locked)}
+                  className="flex items-center cursor-pointer"
+                >
+                  {student.is_locked ? (
+                    <>
+                      <Unlock className="mr-2 h-4 w-4 text-green-500" />
+                      <span>Unlock Profile</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="mr-2 h-4 w-4 text-red-500" />
+                      <span>Lock Profile</span>
+                    </>
+                  )}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -869,14 +940,6 @@ export default function FeesManagementPage() {
                 onChange={handleAcademicYearChange}
                 placeholder="All Years..."
                 disabled={loadingFilters || !selectedCourse}
-              />
-              <DropdownSelect
-                label="Filter by Semester"
-                options={semesterOptions}
-                value={selectedSemester}
-                onChange={handleSemesterChange}
-                placeholder="All Semesters..."
-                disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
 
