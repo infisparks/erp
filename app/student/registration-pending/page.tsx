@@ -73,7 +73,6 @@ interface PendingStudent {
   course_name: string
   academic_year_name: string
   academic_year_session: string
-  status: string // 'Active'
   is_registered: boolean // false
 }
 
@@ -228,7 +227,6 @@ export default function RegistrationPendingPage() {
             student_id,
             academic_year_name,
             academic_year_session,
-            status,
             is_registered,
             student:students (
               id,
@@ -245,7 +243,6 @@ export default function RegistrationPendingPage() {
           `,
           )
           .eq("is_registered", false) // CORE FILTER 1
-          .eq("status", "Active")     // CORE FILTER 2
 
         // --- Filter Logic ---
         if (shouldApplyFilters) {
@@ -297,7 +294,6 @@ export default function RegistrationPendingPage() {
                 course_name: item.course.name,
                 academic_year_name: item.academic_year_name,
                 academic_year_session: item.academic_year_session,
-                status: item.status,
                 is_registered: item.is_registered,
               }
             })

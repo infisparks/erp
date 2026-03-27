@@ -68,9 +68,9 @@ import { Dropdown } from "primereact/dropdown"
 
 // --- Type Definitions ---
 interface StudentEnrollment {
-  enrollment_id: string
-  student_id: string
-  academic_year_id: string
+  enrollment_id: number;
+  student_id: number;
+  academic_year_id: number;
   fullname: string | null
   email: string | null
   roll_number: string | null
@@ -78,13 +78,8 @@ interface StudentEnrollment {
   course_name: string
   academic_year_name: string
   academic_year_session: string
-  semester_name: string
-  status: string // This is from student_semesters
-  promotion_status: string
-
-  // --- Fields from student_academic_years ---
-  academic_year_status: string | null // The 'status' from the parent academic year
-  is_registered: boolean // The 'is_registered' from the parent academic year
+  is_registered: boolean
+  sequence: number
 }
 
 // For filters
@@ -101,11 +96,7 @@ interface AcademicYear {
   id: string
   name: string
   course_id: string
-}
-interface Semester {
-  id: string
-  name: string
-  academic_year_id: string
+  sequence: number
 }
 
 // -------------------------------------------------------------------
@@ -204,8 +195,6 @@ export default function FeesManagementPage() {
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
-  const [allSemesters, setAllSemesters] = useState<Semester[]>([])
-
   const [loadingFilters, setLoadingFilters] = useState(true)
 
   // --- Memoized Filter Options ---
@@ -225,15 +214,8 @@ export default function FeesManagementPage() {
     if (!selectedCourse) return []
     return allAcademicYears
       .filter((ay) => ay.course_id === selectedCourse)
-      .sort(sortByName)
+      .sort((a, b) => a.sequence - b.sequence)
   }, [allAcademicYears, selectedCourse])
-
-  const semesterOptions = useMemo(() => {
-    if (!selectedAcademicYear) return []
-    return allSemesters
-      .filter((s) => s.academic_year_id === selectedAcademicYear)
-      .sort(sortByName)
-  }, [allSemesters, selectedAcademicYear])
 
   // --- Data Fetching (Students) ---
   const fetchStudents = useCallback(
@@ -248,180 +230,102 @@ export default function FeesManagementPage() {
 
       try {
         let query = supabase
-          .from("student_semesters")
+          .from("student_academic_years")
           .select(
             `
-          id, 
-          status,
-          promotion_status,
-          student_academic_year_id,
-          student:students (
-            id,
-            fullname,
-            email,
-            photo_path,
-            roll_number
-          ),
-          semester:semesters ( name ),
-          academic_year:student_academic_years (
             id,
             academic_year_name,
             academic_year_session,
-            status,
             is_registered,
+            student:students (
+              id,
+              fullname,
+              email,
+              photo_path,
+              roll_number
+            ),
             course:courses ( name )
+            `,
           )
-          `,
-          )
-          .eq("status", "active")
           .order("created_at", { ascending: false })
 
         // --- Filter Logic ---
-        let ayFilterIds: string[] | null = null
-
         if (shouldApplyFilters) {
-          // Stream Filter
           if (selectedStream && !selectedCourse) {
-            const { data: courseIdsData, error: cError } = await supabase
+            const { data: courseIdsData } = await supabase
               .from("courses")
               .select("id")
               .eq("stream_id", selectedStream)
-            if (cError) throw cError
-            const courseIds = courseIdsData.map((c: { id: string }) => c.id)
-
-            if (courseIds.length > 0) {
-              const { data: ayIds, error: ayError } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .in("course_id", courseIds)
-              if (ayError) throw ayError
-              ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
-            } else {
-              ayFilterIds = []
-            }
+            const courseIds = courseIdsData?.map((c: { id: string }) => c.id) || []
+            if (courseIds.length > 0) query = query.in("course_id", courseIds)
           }
 
-          // Course Filter
           if (selectedCourse) {
-            const { data: ayIds, error } = await supabase
-              .from("student_academic_years")
-              .select("id")
-              .eq("course_id", selectedCourse)
-            if (error) throw error
-            ayFilterIds = ayIds.map((ay: { id: string }) => ay.id)
+            query = query.eq("course_id", selectedCourse)
           }
 
-          // Academic Year Filter
           if (selectedAcademicYear) {
             const yearName = allAcademicYears.find(
               (ay) => ay.id === selectedAcademicYear,
             )?.name
-            if (yearName) {
-              const { data: ayIds, error } = await supabase
-                .from("student_academic_years")
-                .select("id")
-                .eq("academic_year_name", yearName)
-              if (error) throw error
-
-              const matchingIds = ayIds.map((ay: { id: string }) => ay.id)
-
-              if (ayFilterIds) {
-                ayFilterIds = ayFilterIds.filter((id) =>
-                  matchingIds.includes(id),
-                )
-              } else {
-                ayFilterIds = matchingIds
-              }
-            } else {
-              ayFilterIds = []
-            }
+            if (yearName) query = query.eq("academic_year_name", yearName)
           }
-
-          // Apply the Academic Year ID filter
-          if (ayFilterIds !== null) {
-            if (ayFilterIds.length === 0) {
-              query = query.eq("student_academic_year_id", "0") // Use string '0' for UUID mismatch
-            } else {
-              query = query.in("student_academic_year_id", ayFilterIds)
-            }
-          }
-
-          // Semester Filter
-          if (selectedSemester) {
-            query = query.eq("semester_id", selectedSemester)
-          }
-        } // end if (shouldApplyFilters)
-
-        // --- Add Search Queries (Always apply for dedicated search) ---
-        if (nameQuery) {
-          // Use full-text search index if available, or ilike
-          query = query.ilike("student.fullname", `%${nameQuery}%`)
         }
-        if (rollQuery) {
-          query = query.ilike("student.roll_number", `%${rollQuery}%`)
-        }
+
+        // --- Search Queries ---
+        if (nameQuery) query = query.ilike("student.fullname", `%${nameQuery}%`)
+        if (rollQuery) query = query.ilike("student.roll_number", `%${rollQuery}%`)
 
         const { data, error } = await query
         if (error) throw error
 
         if (data) {
-          const flattenedData: StudentEnrollment[] = data
+          // 1. Flatten Data
+          let flattenedData: StudentEnrollment[] = data
             .map((item: any) => {
-              if (!item.student || !item.academic_year || !item.semester)
-                return null
+              if (!item.student) return null
+              
+              const ayInfo = allAcademicYears.find(ay => ay.name === item.academic_year_name && (selectedCourse ? ay.course_id === selectedCourse : true));
 
               return {
                 enrollment_id: item.id,
                 student_id: item.student.id,
-                academic_year_id: item.student_academic_year_id,
+                academic_year_id: item.id,
                 fullname: item.student.fullname,
                 email: item.student.email,
                 roll_number: item.student.roll_number,
                 photo_path: item.student.photo_path,
-                course_name: item.academic_year?.course?.name || "N/A",
-                academic_year_name:
-                  item.academic_year?.academic_year_name || "N/A",
-                academic_year_session:
-                  item.academic_year?.academic_year_session || "N/A",
-                semester_name: item.semester?.name || "N/A",
-                status: item.status,
-                promotion_status: item.promotion_status,
-
-                // --- Map the new values ---
-                academic_year_status: item.academic_year?.status || null,
-                is_registered: item.academic_year?.is_registered ?? false, // Default to false if null/undefined
+                course_name: item.course?.name || "N/A",
+                academic_year_name: item.academic_year_name || "N/A",
+                academic_year_session: item.academic_year_session || "N/A",
+                is_registered: item.is_registered ?? false,
+                sequence: ayInfo?.sequence ?? 0
               }
             })
-            .filter(
-              (s: StudentEnrollment | null): s is StudentEnrollment => s !== null,
-            )
+            .filter((s: StudentEnrollment): s is StudentEnrollment => s !== null)
 
-          setStudents(flattenedData)
+          // 2. Filter for LATEST Year per Student
+          const studentMap = new Map<number, StudentEnrollment>()
+          flattenedData.forEach(enroll => {
+            const existing = studentMap.get(enroll.student_id)
+            if (!existing || enroll.sequence > existing.sequence) {
+              studentMap.set(enroll.student_id, enroll)
+            }
+          })
+          
+          const finalData = Array.from(studentMap.values())
+          setStudents(finalData)
 
-          // Only show message if no global search was performed, otherwise the table handles it
-          if (
-            flattenedData.length === 0 &&
-            (selectedStream ||
-              selectedCourse ||
-              selectedAcademicYear ||
-              selectedSemester)
-          ) {
+          if (finalData.length === 0 && (shouldApplyFilters || nameQuery || rollQuery)) {
             setStatusMessage({
               type: "error",
               message: "No students found matching the selected filters.",
-            })
-          } else if (flattenedData.length === 0 && (nameQuery || rollQuery)) {
-            setStatusMessage({
-              type: "error",
-              message: "No student found with that name or roll number.",
             })
           }
         }
       } catch (err: any) {
         console.error("Error fetching students:", err)
-        setError(
-          err.message || "An unknown error occurred while fetching students.",
-        )
+        setError(err.message || "An error occurred while fetching students.")
       } finally {
         setLoading(false)
       }
@@ -431,7 +335,6 @@ export default function FeesManagementPage() {
       selectedStream,
       selectedCourse,
       selectedAcademicYear,
-      selectedSemester,
       allAcademicYears,
     ],
   )
@@ -441,23 +344,20 @@ export default function FeesManagementPage() {
     const fetchAllConfig = async () => {
       setLoadingFilters(true)
       try {
-        const [streamData, courseData, ayData, semData] = await Promise.all([
+        const [streamData, courseData, ayData] = await Promise.all([
           supabase.from("streams").select("*"),
           supabase.from("courses").select("*"),
-          supabase.from("academic_years").select("id, name, course_id"),
-          supabase.from("semesters").select("id, name, academic_year_id"),
+          supabase.from("academic_years").select("id, name, course_id, sequence"),
         ])
 
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
         if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[])
-        if (semData.data) setAllSemesters(semData.data as Semester[])
 
         const errors = [
           streamData.error,
           courseData.error,
           ayData.error,
-          semData.error,
         ].filter(Boolean)
         if (errors.length > 0) {
           throw new Error(errors.map((e) => (e as Error).message).join(", "))
@@ -496,11 +396,6 @@ export default function FeesManagementPage() {
 
   const handleAcademicYearChange = (value: string | null) => {
     setSelectedAcademicYear(value)
-    setSelectedSemester(null)
-  }
-
-  const handleSemesterChange = (value: string | null) => {
-    setSelectedSemester(value)
   }
 
   // --- Search and Action Handlers ---
@@ -513,7 +408,6 @@ export default function FeesManagementPage() {
     setSelectedStream(null)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
-    setSelectedSemester(null)
     setStudentSearch("")
     setRollNumberSearch("")
     setGlobalFilter("")
@@ -543,10 +437,7 @@ export default function FeesManagementPage() {
       "Email",
       "Roll Number",
       "Course",
-      "Academic Year",
-      "Semester",
-      "Status",
-      "Promotion Status",
+      "Academic Year"
     ]
     const csvContent = [
       headers.join(","),
@@ -557,9 +448,6 @@ export default function FeesManagementPage() {
           s.roll_number,
           `"${s.course_name}"`,
           `"${s.academic_year_name} (${s.academic_year_session})"`,
-          s.semester_name,
-          s.status,
-          s.promotion_status,
         ].join(","),
       ),
     ].join("\n")
@@ -609,9 +497,7 @@ export default function FeesManagementPage() {
         const student = row.original
 
         // --- Logic for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
+        const isRegistrationPending = student.is_registered === false
 
         return (
           <div className="flex items-center gap-3">
@@ -648,38 +534,12 @@ export default function FeesManagementPage() {
         <div>
           <div className="font-medium">{row.original.course_name}</div>
           <div className="text-xs text-muted-foreground">
-            {row.original.academic_year_name} ({row.original.semester_name})
+            {row.original.academic_year_name}
           </div>
           <div className="text-xs text-muted-foreground">
             {row.original.academic_year_session}
           </div>
         </div>
-      ),
-    },
-    {
-      accessorKey: "promotion_status",
-      header: "Promotion Status",
-      cell: ({ row }) => (
-        <Badge
-          variant={
-            row.original.promotion_status === "Eligible" ? "default" : "secondary"
-          }
-          className="capitalize"
-        >
-          {row.original.promotion_status}
-        </Badge>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Enrollment Status",
-      cell: ({ row }) => (
-        <Badge
-          variant={row.original.status === "active" ? "default" : "destructive"}
-          className="capitalize"
-        >
-          {row.original.status}
-        </Badge>
       ),
     },
     {
@@ -689,9 +549,7 @@ export default function FeesManagementPage() {
         const student = row.original
         
         // --- ✅ NEW: Check for registration pending ---
-        const isRegistrationPending =
-          student.academic_year_status === "Active" &&
-          student.is_registered === false
+        const isRegistrationPending = student.is_registered === false
 
         return (
           <div className="text-right">
@@ -869,14 +727,6 @@ export default function FeesManagementPage() {
                 onChange={handleAcademicYearChange}
                 placeholder="All Years..."
                 disabled={loadingFilters || !selectedCourse}
-              />
-              <DropdownSelect
-                label="Filter by Semester"
-                options={semesterOptions}
-                value={selectedSemester}
-                onChange={handleSemesterChange}
-                placeholder="All Semesters..."
-                disabled={loadingFilters || !selectedAcademicYear}
               />
             </div>
 
