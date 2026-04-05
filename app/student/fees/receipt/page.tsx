@@ -129,12 +129,12 @@ function ReceiptPage() {
         const typedPaymentData = paymentData as PaymentDetails;
         setPayment(typedPaymentData);
 
-        const { student_id, academic_year } = typedPaymentData; // academic_year is session string
+        const { student_id, academic_year, student_academic_year_id } = typedPaymentData; // academic_year is session string
 
         // 2. Fetch Student/Year Details and Total Paid Status in parallel
         const [studentAyResult, allPaymentsResult] = await Promise.all([
           // --- UPDATED QUERY ---
-          // Fetch student info from student_academic_years
+          // Fetch student info from student_academic_years using the link from payment
           supabase
             .from("student_academic_years")
             .select(`
@@ -145,17 +145,15 @@ function ReceiptPage() {
               student:students ( fullname, roll_number ),
               course:courses ( name )
             `)
-            .eq('student_id', student_id)
-            .eq('academic_year_session', academic_year)
+            .eq('id', student_academic_year_id)
             .maybeSingle(),
           // --- END UPDATED QUERY ---
 
-          // Fetch all payments for this student/year to calculate balance
+          // Fetch all payments for this specific enrollment to calculate balance correctly
           supabase
             .from("student_payments")
             .select("amount, fees_type")
-            .eq("student_id", student_id)
-            .eq("academic_year", academic_year)
+            .eq("student_academic_year_id", student_academic_year_id)
         ]);
 
         // 3. Process Student Data

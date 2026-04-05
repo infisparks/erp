@@ -140,6 +140,7 @@ interface StudentDetail {
     is_locked: boolean;
     is_verifiedby_admin: boolean;
     is_verifiedby_examcell: boolean;
+    scholarship_categories: { name: string } | null;
 
     // From student_semesters
     enrollment_id: number // student_semesters.id (bigint)
@@ -428,6 +429,7 @@ function StudentDetailContent() {
     const [allCourses, setAllCourses] = useState<Course[]>([])
     const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
     const [allSemesters, setAllSemesters] = useState<Semester[]>([])
+    const [allCategories, setAllCategories] = useState<{ id: string, name: string }[]>([])
 
 
     // --- Memoized Options for Edit Form Cascade ---
@@ -471,13 +473,15 @@ function StudentDetailContent() {
                     docData,
                     courseData,
                     academicYearData, // This is from 'academic_years'
-                    semesterData
+                    semesterData,
+                    scholarshipCategories
                 ] = await Promise.all([
-                    supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
+                   supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
                     supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
                     supabase.from("courses").select("id, name"), 
                     supabase.from("academic_years").select("id, name, course_id"), 
-                    supabase.from("semesters").select("id, name, academic_year_id") 
+                    supabase.from("semesters").select("id, name, academic_year_id"),
+                    supabase.from("scholarship_categories").select("id, name")
                 ])
 
                 // 🚀 FIX: Set state for form_config data
@@ -491,11 +495,12 @@ function StudentDetailContent() {
                 setAllCourses(fetchedCourses);
                 setAllAcademicYears(fetchedAcademicYears);
                 setAllSemesters(fetchedSemesters);
+                setAllCategories(scholarshipCategories.data || []);
 
                 // 2. Fetch Student Data
                 const { data: studentD, error: studentError } = await supabase
                     .from("students")
-                    .select("*")
+                    .select("*, scholarship_categories(name)")
                     .eq("id", studentId)
                     .single()
                 if (studentError) throw new Error(`Failed to fetch student: ${studentError.message}`);
@@ -1005,7 +1010,7 @@ function StudentDetailContent() {
             ["Merit No.", student.merit_no],
             ["Admission Year", student.admission_year],
             ["Admission Type", student.admission_type],
-            ["Admission Category", student.admission_category],
+            ["Admission Category", student.scholarship_categories?.name || student.admission_category],
             ["Category Type", student.category_type],
             ["Quota Selection", student.quota_selection],
         ]);
@@ -1115,7 +1120,7 @@ function StudentDetailContent() {
                             <DetailItem label="Merit No." value={student.merit_no} />
                             <DetailItem label="Admission Year" value={student.admission_year} />
                             <DetailItem label="Admission Type" value={student.admission_type} />
-                            <DetailItem label="Admission Category" value={student.admission_category} />
+                            <DetailItem label="Admission Category" value={student.scholarship_categories?.name || student.admission_category} />
                             <DetailItem label="Category Type" value={student.category_type} />
                             <DetailItem label="Quota Selection" value={student.quota_selection} />
                         </AccordionContent>
@@ -1320,8 +1325,14 @@ function StudentDetailContent() {
                     <Card>
                         <CardHeader><CardTitle>Category Details</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <FormInputGroup label="Admission Category" name="admission_category" value={editFormData.admission_category || ""} onChange={handleEditChange} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormSearchableSelectGroup
+                                    label="Admission Category (Quota)"
+                                    value={editFormData.admission_category ?? null}
+                                    onChange={(val) => handleEditSelectChange("admission_category", val || "")}
+                                    options={allCategories.map(c => ({ label: c.name, value: c.id }))}
+                                    placeholder="Select category"
+                                />
                                 <FormInputGroup label="Category Type" name="category_type" value={editFormData.category_type || ""} onChange={handleEditChange} />
                             </div>
                         </CardContent>

@@ -59,6 +59,7 @@ interface StudentFullDetails {
   email: string | null;
   photo_path: string | null;
   roll_number: string | null;
+  scholarship_categories: { name: string } | null;
 }
 
 interface SemesterEnrollment {
@@ -97,6 +98,7 @@ interface Payment {
   created_at: string;
   receipt_no: number;
   student_academic_year_id: number; 
+  academic_year: string | null;
 }
 
 interface AddressDetails {
@@ -396,7 +398,8 @@ function StudentFeeDetailPage() {
             correspondence_details, permanent_details, nationality, created_at, 
             admission_type, admission_category, dateofbirth, roll_number,
             gender, student_mobile_no, father_mobile_no, mother_mobile_no, email,
-            photo_path
+            photo_path,
+            scholarship_categories(name)
           `)
           .eq('id', numericStudentId) 
           .single();
@@ -432,7 +435,7 @@ function StudentFeeDetailPage() {
         // 3. Fetch all Payments for the student
         const { data: paymentData, error: paymentError } = await supabase
           .from("student_payments")
-          .select("id, amount, fees_type, payment_method, created_at, receipt_no, student_academic_year_id")
+          .select("id, amount, fees_type, payment_method, created_at, receipt_no, student_academic_year_id, academic_year")
           .eq("student_id", numericStudentId);
 
         if (paymentError) throw new Error(`Payment Fetch Error: ${paymentError.message}`);
@@ -448,7 +451,14 @@ function StudentFeeDetailPage() {
             status: ss.status,
           }));
 
-          const yearPayments = allPayments.filter(p => p.student_academic_year_id === ay.id);
+          const yearPayments = allPayments.filter(p => {
+            // Priority: Match by specific enrollment ID
+            if (p.student_academic_year_id) {
+              return p.student_academic_year_id === ay.id;
+            }
+            // Fallback: Match by academic session (Legacy data only)
+            return p.academic_year === ay.academic_year_session;
+          });
           
           const tuitionPaid = yearPayments
             .filter(p => p.fees_type === 'Tuition Fee')
@@ -593,7 +603,7 @@ function StudentFeeDetailPage() {
                   <InfoItem label="Mother's Name" value={student.mother_name} />
                   <InfoItem label="Mother's Mobile" value={student.mother_mobile_no} />
                   <InfoItem label="Mother's Email" value={student.mother_email} />
-                  <InfoItem label="Quota/Category" value={student.admission_category} />
+                  <InfoItem label="Quota/Category" value={student.scholarship_categories?.name || student.admission_category} />
                 </div>
               </div>
 

@@ -302,7 +302,7 @@ function AddPaymentPage() {
           // 3. --- NEW: Fetch all "Tuition Fee" payments for this student
           supabase
             .from("student_payments")
-            .select("amount, academic_year")
+            .select("amount, academic_year, student_academic_year_id")
             .eq("student_id", studentId)
             .eq("fees_type", "Tuition Fee"),
 
@@ -322,13 +322,16 @@ function AddPaymentPage() {
 
         // --- 2. --- NEW: Process Payments into a lookup map ---
         if (allPaymentsResult.error) throw new Error(`Payments Fetch Error: ${allPaymentsResult.error.message}`);
-        const tuitionPaidPerYear: { [key: string]: number } = {};
+        const tuitionPaidByYearId: { [key: string]: number } = {};
         if (allPaymentsResult.data) {
           for (const payment of allPaymentsResult.data) {
-            if (payment.academic_year) {
-              const currentPaid = tuitionPaidPerYear[payment.academic_year] || 0;
-              tuitionPaidPerYear[payment.academic_year] = currentPaid + payment.amount;
-            }
+            // Priority 1: Use student_academic_year_id (New Structure)
+            if (payment.student_academic_year_id) {
+              const currentPaid = tuitionPaidByYearId[payment.student_academic_year_id] || 0;
+              tuitionPaidByYearId[payment.student_academic_year_id] = currentPaid + payment.amount;
+            } 
+            // Priority 2: Use academic_year session string (Fallback for old data)
+            // Note: This is less accurate if there are duplicates, but necessary for legacy support
           }
         }
         
@@ -344,8 +347,8 @@ function AddPaymentPage() {
             total_fee: ay.total_fee || 0,
             scholarship_amount: ay.scholarship_amount || 0,
             is_registered: ay.is_registered || false,
-            // --- NEW: Add the pre-calculated sum ---
-            total_tuition_paid: tuitionPaidPerYear[ay.academic_year_session] || 0,
+            // --- NEW: Add the pre-calculated sum, preferring the specific ID link ---
+            total_tuition_paid: tuitionPaidByYearId[ay.id] || 0,
           }));
           setAllAcademicYears(yearDetails);
         }
@@ -368,8 +371,8 @@ function AddPaymentPage() {
   }, [studentId, supabase])
   
   // --- This function is now for the DETAILED history list and summary card ---
-  const fetchPaymentHistory = async (yearSession: string) => {
-    if (!studentId) return;
+  const fetchPaymentHistory = async (yearSession: string, enrollmentId: string) => {
+    if (!studentId || !enrollmentId) return;
 
     setLoadingPayments(true);
     setPaymentHistory([]);
@@ -382,7 +385,7 @@ function AddPaymentPage() {
         .from("student_payments")
         .select("id, amount, fees_type, payment_method, created_at")
         .eq("student_id", studentId)
-        .eq("academic_year", yearSession);
+        .eq("student_academic_year_id", enrollmentId);
 
       if (paymentError) throw new Error(`Payment Fetch Error: ${paymentError.message}`);
         
@@ -424,7 +427,7 @@ function AddPaymentPage() {
     const yearData = allAcademicYears.find(y => y.student_academic_year_id === selectedYearId);
     if (yearData) {
       setSelectedYearData(yearData);
-      fetchPaymentHistory(yearData.academic_year); // Fetch detailed history for this year
+      fetchPaymentHistory(yearData.academic_year, yearData.student_academic_year_id); // Fetch detailed history for this specific enrollment
     } else {
       setSelectedYearData(null);
       setPaymentHistory([]);
