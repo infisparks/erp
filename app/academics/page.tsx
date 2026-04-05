@@ -54,11 +54,13 @@ interface AcademicYear {
   id: string
   name: string
   course_id: string
+  sequence: number
 }
 interface Semester {
   id: string
   name: string
   academic_year_id: string
+  serial_id: number
 }
 interface Subject {
   id: string
@@ -137,14 +139,14 @@ export default function AcademicsPage() {
 
   const fetchAcademicYears = async (courseId: string) => {
     setLoading(prev => ({ ...prev, academicYears: true }))
-    const { data } = await supabase.from("academic_years").select("*").eq("course_id", courseId).order("name")
+    const { data } = await supabase.from("academic_years").select("*").eq("course_id", courseId).order("sequence").order("name")
     if (data) setAcademicYears(data)
     setLoading(prev => ({ ...prev, academicYears: false }))
   }
 
   const fetchSemesters = async (academicYearId: string) => {
     setLoading(prev => ({ ...prev, semesters: true }))
-    const { data } = await supabase.from("semesters").select("*").eq("academic_year_id", academicYearId).order("name")
+    const { data } = await supabase.from("semesters").select("*").eq("academic_year_id", academicYearId).order("serial_id").order("name")
     if (data) setSemesters(data)
     setLoading(prev => ({ ...prev, semesters: false }))
   }
@@ -277,8 +279,10 @@ export default function AcademicsPage() {
         throw new Error("Missing required parent selection.")
       }
       
-      // --- Remove ID for submission (if it exists) ---
+      // --- Remove ID and handle empty numeric strings ---
       const { id, ...dataToInsert } = dataToSubmit;
+      if (dataToInsert.serial_id === "") delete dataToInsert.serial_id;
+      if (dataToInsert.sequence === "") dataToInsert.sequence = 0;
       
       if (modalMode === "create") {
         // --- CREATE ---
@@ -329,7 +333,7 @@ export default function AcademicsPage() {
             const newArray = modalMode === "create"
               ? [...prev, data as AcademicYear]
               : prev.map(i => (i.id === data.id ? (data as AcademicYear) : i));
-            return newArray.sort((a, b) => a.name.localeCompare(b.name));
+            return newArray.sort((a, b) => (a.sequence || 0) - (b.sequence || 0) || a.name.localeCompare(b.name));
           });
           break
         case "semester":
@@ -337,7 +341,7 @@ export default function AcademicsPage() {
             const newArray = modalMode === "create"
               ? [...prev, data as Semester]
               : prev.map(i => (i.id === data.id ? (data as Semester) : i));
-            return newArray.sort((a, b) => a.name.localeCompare(b.name));
+            return newArray.sort((a, b) => (a.serial_id || 0) - (b.serial_id || 0) || a.name.localeCompare(b.name));
           });
           break
         case "subject":
@@ -452,12 +456,14 @@ export default function AcademicsPage() {
         return (
           <>
             <FormInputGroup label="Academic Year Name" name="name" value={formData.name || ""} onChange={handleFormChange} placeholder="e.g., First Year, Second Year" required />
+            <FormInputGroup label="Sequence" name="sequence" type="number" value={formData.sequence || "0"} onChange={handleFormChange} placeholder="e.g., 1, 2" required />
           </>
         )
       case "semester":
         return (
           <>
             <FormInputGroup label="Semester Name" name="name" value={formData.name || ""} onChange={handleFormChange} placeholder="e.g., Semester 1" required />
+            <FormInputGroup label="Serial ID (Order)" name="serial_id" type="number" value={formData.serial_id || ""} onChange={handleFormChange} placeholder="Leave empty for automatic" />
           </>
         )
       case "subject":

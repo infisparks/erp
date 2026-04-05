@@ -66,7 +66,7 @@ interface StudentAcademicYearWithSemesters extends Omit<StudentAcademicYear, 'st
   scholarship_amount: number | null;
   net_payable_fee: number | null;
 }
-interface StudentAcademicYear { id: string; student_id: string; course_id: string; academic_year_name: string; academic_year_session: string; status: string; }
+interface StudentAcademicYear { id: string; student_id: string; course_id: string; academic_year_name: string; academic_year_session: string; status: string; year_category_id: string | null; }
 interface StudentSemester { id: string; student_id: string; semester_id: string; student_academic_year_id: string; status: string; promotion_status: string; }
 
 interface PromotionTarget {
@@ -160,6 +160,7 @@ function StudentPromotionContent() {
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([]);
   const [allSemesters, setAllSemesters] = useState<Semester[]>([]);
+  const [yearCategoryOptions, setYearCategoryOptions] = useState<{ id: string; name: string }[]>([]);
 
   // --- Student & Loading State ---
   const [initialLoading, setInitialLoading] = useState(true);
@@ -168,7 +169,7 @@ function StudentPromotionContent() {
 
   // --- Promotion State ---
   const [promotionTarget, setPromotionTarget] = useState<PromotionTarget | null>(null);
-  const [targetAcademicYearSession, setTargetAcademicYearSession] = useState("");
+  const [targetYearCategoryId, setTargetYearCategoryId] = useState<string | null>(null);
   const [isPromoting, setIsPromoting] = useState(false);
 
   // --- Branch Transfer State ---
@@ -176,7 +177,7 @@ function StudentPromotionContent() {
   const [transferCourseId, setTransferCourseId] = useState<string | null>(null);
   const [transferAcademicYearId, setTransferAcademicYearId] = useState<string | null>(null);
   const [transferSemesterId, setTransferSemesterId] = useState<string | null>(null);
-  const [transferSession, setTransferSession] = useState("");
+  const [transferYearCategoryId, setTransferYearCategoryId] = useState<string | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
 
   // --- Status State (for the page) ---
@@ -344,17 +345,19 @@ function StudentPromotionContent() {
     const fetchConfig = async () => {
       setConfigLoading(true);
       try {
-        const [streamsRes, coursesRes, ayRes, semestersRes] = await Promise.all([
+        const [streamsRes, coursesRes, ayRes, semestersRes, yearRes] = await Promise.all([
           supabase.from("streams").select("id, name").order("name"),
           supabase.from("courses").select("id, name, stream_id").order("name"),
           supabase.from("academic_years").select("id, name, course_id").order("name"),
           supabase.from("semesters").select("id, name, academic_year_id").order("name"),
+          supabase.from("year_category").select("id, name").order("name")
         ]);
         
         if (streamsRes.data) setAllStreams(streamsRes.data);
         if (coursesRes.data) setAllCourses(coursesRes.data);
         if (ayRes.data) setAllAcademicYears(ayRes.data);
         if (semestersRes.data) setAllSemesters(semestersRes.data);
+        if (yearRes.data) setYearCategoryOptions(yearRes.data);
 
       } catch (err: any) {
         setPageStatusMessage({ type: 'error', message: `Config Error: ${err.message}` });
@@ -386,8 +389,8 @@ function StudentPromotionContent() {
     
     const { active_enrollment } = selectedStudentDetails;
 
-    if (promotionTarget.isNewYear && !targetAcademicYearSession.trim()) {
-      setPageStatusMessage({ type: 'error', message: 'Please enter a "Target Session" (e.g., 2025-2026) for the new academic year.' });
+    if (promotionTarget.isNewYear && !targetYearCategoryId) {
+      setPageStatusMessage({ type: 'error', message: 'Please select a "Target Year Category" for the new academic year.' });
       return;
     }
 
@@ -462,7 +465,8 @@ function StudentPromotionContent() {
           student_id: active_enrollment.student_id,
           course_id: active_enrollment.course_id,
           academic_year_name: promotionTarget.targetAcademicYearName,
-          academic_year_session: targetAcademicYearSession,
+          academic_year_session: yearCategoryOptions.find(y => y.id === targetYearCategoryId)?.name || 'N/A', 
+          year_category_id: targetYearCategoryId, 
           status: 'Active',
           total_fee: openFee,
           scholarship_name: currentAcademicYear.scholarship_name,
@@ -509,7 +513,7 @@ function StudentPromotionContent() {
       if (updateError) throw new Error(`Old Semester Update Error: ${updateError.message}`);
 
       setPageStatusMessage({ type: 'success', message: `Student promoted to ${promotionTarget.targetSemesterName} successfully!` });
-      setTargetAcademicYearSession("");
+      setTargetYearCategoryId(null);
       
       // Refresh the details in place
       fetchStudentDetails(active_enrollment.student_id); 
@@ -525,11 +529,11 @@ function StudentPromotionContent() {
   // --- Branch Transfer Logic ---
   const handleBranchTransfer = async () => {
     if (!selectedStudentDetails || !selectedStudentDetails.active_enrollment || !transferCourseId || !transferSemesterId) {
-      setPageStatusMessage({ type: 'error', message: 'Please select a new course, year, semester, and session.' });
+      setPageStatusMessage({ type: 'error', message: 'Please select a new course, year, and semester.' });
       return;
     }
-    if (!transferSession.trim()) {
-      setPageStatusMessage({ type: 'error', message: 'A Target Session (e.g., 2025-2026) is required.' });
+    if (!transferYearCategoryId) {
+      setPageStatusMessage({ type: 'error', message: 'A Target Year Category (Batch) is required.' });
       return;
     }
 
@@ -570,7 +574,8 @@ function StudentPromotionContent() {
           student_id: active_enrollment.student_id,
           course_id: transferCourseId,
           academic_year_name: newYear,
-          academic_year_session: transferSession,
+          academic_year_session: yearCategoryOptions.find(y => y.id === transferYearCategoryId)?.name || 'N/A',
+          year_category_id: transferYearCategoryId,
           status: 'Active',
           total_fee: openFee,
           scholarship_name: currentAcademicYear.scholarship_name,
@@ -618,7 +623,7 @@ function StudentPromotionContent() {
       setTransferCourseId(null);
       setTransferAcademicYearId(null);
       setTransferSemesterId(null);
-      setTransferSession("");
+      setTransferYearCategoryId(null);
       
       // Refresh the details in place
       fetchStudentDetails(active_enrollment.student_id);
@@ -787,21 +792,24 @@ function StudentPromotionContent() {
                           
                           {promotionTarget?.isNewYear && (
                             <div className="space-y-1">
-                              <Label htmlFor="target-year-session" className="font-semibold text-red-600">Target Session (for New Year)*</Label>
-                              <Input 
-                                id="target-year-session"
-                                placeholder="E.g., 2025-2026" 
-                                value={targetAcademicYearSession} 
-                                onChange={(e) => setTargetAcademicYearSession(e.target.value)}
-                                required
+                              <Label className="font-semibold text-red-600">Select Admission Batch / Year Category*</Label>
+                              <Dropdown
+                                value={targetYearCategoryId}
+                                options={yearCategoryOptions}
+                                onChange={(e) => setTargetYearCategoryId(e.value)}
+                                optionLabel="name"
+                                optionValue="id"
+                                placeholder="Select Batch (e.g. 2025-26)"
+                                className="w-full"
+                                filter
                               />
-                              <p className="text-xs text-gray-500">Required. This is the session for the newly created academic year record.</p>
+                              <p className="text-xs text-gray-500">Required. This link ensures the student is charged the correct fees for their batch.</p>
                             </div>
                           )}
                           
                           <Button 
                             onClick={handlePromotion} 
-                            disabled={!promotionTarget || isPromoting || (promotionTarget?.isNewYear && !targetAcademicYearSession.trim()) || activeEnrollmentStatus !== 'Eligible'}
+                            disabled={!promotionTarget || isPromoting || (promotionTarget?.isNewYear && !targetYearCategoryId) || activeEnrollmentStatus !== 'Eligible'}
                           >
                             {isPromoting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                             Confirm Promotion to {promotionTarget?.targetSemesterName || '...'}
@@ -847,20 +855,22 @@ function StudentPromotionContent() {
                           </div>
                           
                           <div className="space-y-1">
-                            <Label htmlFor="transfer-session" className="font-semibold text-red-600">Target Session*</Label>
-                            <Input 
-                              id="transfer-session"
-                              placeholder="E.g., 2025-2026" 
-                              value={transferSession} 
-                              onChange={(e) => setTransferSession(e.target.value)}
-                              required
+                            <Label className="font-semibold">Admission Batch / Year Category*</Label>
+                            <Dropdown
+                              value={transferYearCategoryId}
+                              options={yearCategoryOptions}
+                              onChange={(e) => setTransferYearCategoryId(e.value)}
+                              optionLabel="name"
+                              optionValue="id"
+                              placeholder="Select Batch (e.g. 2024-25)"
+                              className="w-full"
+                              filter
                             />
-                            <p className="text-xs text-gray-500">Required. This is the session for the new academic year/enrollment.</p>
                           </div>
                           
                           <Button 
                             onClick={handleBranchTransfer} 
-                            disabled={!transferSemesterId || !transferSession || isTransferring} 
+                            disabled={!transferSemesterId || !transferYearCategoryId || isTransferring} 
                             className="bg-red-600 hover:bg-red-700"
                           >
                             {isTransferring ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <GitBranch className="h-4 w-4 mr-2" />}

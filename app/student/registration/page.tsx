@@ -61,6 +61,7 @@ interface ActiveEnrollment {
   scholarship_name: string | null
   scholarship_amount: number | null
   net_payable_fee: number | null
+  year_category_id: string | null
 }
 
 interface Subject {
@@ -103,9 +104,7 @@ function StudentRegistrationPage() {
   const [availableScholarships, setAvailableScholarships] = useState<
     CategoryOption[]
   >([])
-  const [courseFeeMap, setCourseFeeMap] = useState<Map<string, number>>(
-    new Map(),
-  )
+  const [scholarshipMap, setScholarshipMap] = useState<Map<string, number>>(new Map())
   const [selectedScholarshipName, setSelectedScholarshipName] = useState("")
 
   // --- NEW: State for Payment Plan ---
@@ -127,11 +126,12 @@ function StudentRegistrationPage() {
 
   // Calculate new fees dynamically
   const { newPayableAmount, newScholarshipAmount } = useMemo(() => {
+    // With uniform fees, base is always the course fee for that batch
     const total_fee = data?.enrollment?.total_fee || 0
-    const payable = courseFeeMap.get(selectedScholarshipName) ?? total_fee
-    const scholarship = total_fee - payable
-    return { newPayableAmount: payable, newScholarshipAmount: scholarship }
-  }, [selectedScholarshipName, courseFeeMap, data?.enrollment?.total_fee])
+    const sch_benefit = scholarshipMap.get(selectedScholarshipName) || 0
+    const payable = total_fee - sch_benefit
+    return { newPayableAmount: Math.max(0, payable), newScholarshipAmount: sch_benefit }
+  }, [selectedScholarshipName, scholarshipMap, data?.enrollment?.total_fee])
 
   // --- NEW: File change handler ---
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,7 +173,7 @@ function StudentRegistrationPage() {
         const { data: activeYearData, error: activeYearError } = await supabase
           .from("student_academic_years")
           .select(
-            "id, course_id, academic_year_name, courses(name), total_fee, scholarship_name, scholarship_amount, net_payable_fee, payment_plan", // Added payment_plan
+            "id, course_id, academic_year_name, courses(name), total_fee, scholarship_name, scholarship_amount, net_payable_fee, payment_plan, year_category_id", // Added payment_plan & year_category_id
           )
           .eq("student_id", student_id)
           .eq("status", "Active")
@@ -231,22 +231,34 @@ function StudentRegistrationPage() {
           (categoriesData.data_jsonb as CategoryOption[]) || []
         setAvailableScholarships(scholarshipOptions)
 
-        // 6. Fetch fee structures
+        // 5.5 Fetch scholarship amounts (benefit values)
+        const { data: schAmts, error: schAmtsError } = await supabase
+          .from("scholarship_amounts")
+          .select("category_id, amount, scholarship_categories(name)")
+          .eq("course_id", courseId)
+
+        const sMap = new Map<string, number>()
+        schAmts?.forEach((s: any) => {
+          const name = s.scholarship_categories?.name
+          if (name) sMap.set(name, s.amount)
+        })
+        setScholarshipMap(sMap)
+
+        // 6. Fetch uniform course fee for this specific batch
         const { data: feesData, error: feesError } = await supabase
           .from("course_fees")
-          .select("category_name, amount")
-          .eq("course_id", courseId) 
+          .select("amount")
+          .eq("course_id", courseId)
+          .eq("academic_year_id", activeYearData.year_category_id)
+          .maybeSingle()
 
         if (feesError)
           throw new Error(`Could not fetch course fees. ${feesError.message}`)
-
-        const feeMap = new Map<string, number>()
-        if (feesData) {
-          for (const fee of feesData) {
-            feeMap.set(fee.category_name, fee.amount)
-          }
-        }
-        setCourseFeeMap(feeMap)
+        
+        // Use the uniform amount for all categories or default to existing
+        const uniformAmount = feesData?.amount || activeYearData.total_fee || 0
+        // We no longer need courseFeeMap for categories, we use the scholarshipMap benefit instead
+        // But we store the base fee in the data object below
 
         // 7. Set all data
         setData({
@@ -264,6 +276,7 @@ function StudentRegistrationPage() {
             scholarship_name: activeYearData.scholarship_name,
             scholarship_amount: activeYearData.scholarship_amount,
             net_payable_fee: activeYearData.net_payable_fee,
+            year_category_id: activeYearData.year_category_id,
           },
           subjects: subjectsData || [],
           studentAcademicYearId: studentAcademicYearId,

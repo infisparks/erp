@@ -83,9 +83,9 @@ interface StudentEnrollment {
   academic_year_name: string
   academic_year_session: string
   is_registered: boolean
-  is_enrollment_verified: boolean // from student_academic_years.is_verified_by_admin
-  is_verifiedby_admin: boolean // from students.is_verifiedby_admin
-  is_verifiedby_examcell: boolean
+  is_verifiedby_admin: boolean // from students
+  is_verifiedby_accountant: boolean // from students
+  is_verifiedby_examcell: boolean // from students
   is_locked: boolean
   sequence: number // From academic_years
 }
@@ -116,26 +116,43 @@ const sortByName = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, undefined, { numeric: true })
 
 // --- Avatar Component ---
-const StudentAvatar: React.FC<{
-  src: string | null
-  alt: string | null
-  supabase: SupabaseClient
-  className?: string
-}> = ({ src, alt, supabase, className = "h-10 w-10" }) => {
+const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, className?: string }> = ({ src, alt, supabase, className = "h-10 w-10" }) => {
+  const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  
+  const isHeic = useMemo(() => {
+    const s = src?.toLowerCase() || '';
+    return s.endsWith('.heic') || s.endsWith('.heif');
+  }, [src]);
+  
   const publicUrl = useMemo(() => {
     if (!src) return null
-    return supabase.storage.from("student_documents").getPublicUrl(src).data
-      .publicUrl
-  }, [src, supabase])
+    if (src.startsWith('http')) return src
+    
+    const cleanPath = src.replace(/^\/+/, '');
+    
+    if (isHeic) {
+      // Specialized transformation for HEIC support in browsers
+      return `https://jjldxdgbrkhtjjwpbezk.supabase.co/storage/v1/render/image/public/student_documents/${cleanPath}?width=200&height=200&format=webp&quality=80`
+    }
+    
+    // Official public URL for standard formats
+    const { data } = supabase.storage.from('student_documents').getPublicUrl(cleanPath);
+    return data.publicUrl;
+  }, [src, isHeic, supabase])
 
   return (
-    <Avatar className={`${className} rounded-md`}>
-      <AvatarImage
-        src={publicUrl || undefined}
-        alt={alt || "Student Photo"}
-        className="rounded-md object-cover"
-      />
-      <AvatarFallback className="rounded-md bg-muted">
+    <Avatar className={`${className} bg-slate-900 ring-1 ring-white/10`}>
+      {publicUrl && !imgError && (
+        <AvatarImage 
+          src={publicUrl} 
+          alt={alt || "Student Photo"} 
+          className={`object-cover transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`} 
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgError(true)}
+        />
+      )}
+      <AvatarFallback className="bg-muted">
         <UserRound className="h-5 w-5 text-muted-foreground" />
       </AvatarFallback>
     </Avatar>
@@ -169,7 +186,7 @@ const DropdownSelect: React.FC<{
 // 💰 Main Fees Management Page Component 💰
 // -------------------------------------------------------------------
 
-export default function FeesManagementPage() {
+export default function StudentManagementPage() {
   const supabase = getSupabaseClient()
 
   // --- Page State ---
@@ -245,7 +262,6 @@ export default function FeesManagementPage() {
             id,
             academic_year_name,
             academic_year_session,
-            is_verified_by_admin,
             is_registered,
             student:students (
               id,
@@ -253,9 +269,10 @@ export default function FeesManagementPage() {
               email,
               photo_path,
               roll_number,
+              is_locked,
               is_verifiedby_admin,
-              is_verifiedby_examcell,
-              is_locked
+              is_verifiedby_accountant,
+              is_verifiedby_examcell
             ),
             course:courses ( name )
             `,
@@ -312,10 +329,10 @@ export default function FeesManagementPage() {
                 course_name: item.course?.name || "N/A",
                 academic_year_name: item.academic_year_name || "N/A",
                 academic_year_session: item.academic_year_session || "N/A",
-                is_enrollment_verified: item.is_verified_by_admin ?? false,
-                is_registered: item.is_registered ?? false,
                 is_verifiedby_admin: item.student?.is_verifiedby_admin ?? false,
+                is_verifiedby_accountant: item.student?.is_verifiedby_accountant ?? false,
                 is_verifiedby_examcell: item.student?.is_verifiedby_examcell ?? false,
+                is_registered: item.is_registered ?? false,
                 is_locked: item.student?.is_locked ?? false,
                 sequence: ayInfo?.sequence ?? 0
               }
@@ -332,12 +349,12 @@ export default function FeesManagementPage() {
             if (!existing) {
               studentMap.set(enroll.student_id, enroll)
             } else {
-              // If new one is verified and existing is not -> Replace
-              if (enroll.is_enrollment_verified && !existing.is_enrollment_verified) {
+              // We primarily check student-level verification for listing
+              if (enroll.is_verifiedby_admin && !existing.is_verifiedby_admin) {
                 studentMap.set(enroll.student_id, enroll)
               } 
               // If both verified or both unverified, take the one with higher sequence
-              else if (enroll.is_enrollment_verified === existing.is_enrollment_verified) {
+              else if (enroll.is_verifiedby_admin === existing.is_verifiedby_admin) {
                 if (enroll.sequence > existing.sequence) {
                   studentMap.set(enroll.student_id, enroll)
                 }
@@ -476,7 +493,9 @@ export default function FeesManagementPage() {
       "Roll Number",
       "Course",
       "Academic Year",
-      "Admin Enrollment Verified",
+      "Admin Verified",
+      "Account Verified",
+      "Exam Cell Verified",
     ]
     const csvContent = [
       headers.join(","),
@@ -487,7 +506,9 @@ export default function FeesManagementPage() {
           s.roll_number,
           `"${s.course_name}"`,
           `"${s.academic_year_name} (${s.academic_year_session})"`,
-          s.is_enrollment_verified ? "YES" : "NO",
+          s.is_verifiedby_admin ? "YES" : "NO",
+          s.is_verifiedby_accountant ? "YES" : "NO",
+          s.is_verifiedby_examcell ? "YES" : "NO",
         ].join(","),
       ),
     ].join("\n")
@@ -499,7 +520,7 @@ export default function FeesManagementPage() {
       link.setAttribute("href", url)
       link.setAttribute(
         "download",
-        "student_fees_export_" +
+        "student_management_export_" +
           new Date().toISOString().slice(0, 10) +
           ".csv",
       )
@@ -523,11 +544,12 @@ export default function FeesManagementPage() {
   // --- NEW: Toggle Status Handler ---
   const toggleStatus = async (
     studentId: number,
-    field: "is_verifiedby_admin" | "is_verifiedby_examcell" | "is_locked",
+    field: "is_verifiedby_admin" | "is_verifiedby_accountant" | "is_verifiedby_examcell" | "is_locked",
     currentValue: boolean,
   ) => {
     try {
       setLoading(true)
+      
       const { error } = await supabase
         .from("students")
         .update({ [field]: !currentValue })
@@ -535,7 +557,7 @@ export default function FeesManagementPage() {
 
       if (error) throw error
 
-      // Optimistically update the UI or refetch
+      // Optimistically update the UI
       setStudents((prev) =>
         prev.map((s) => {
           if (s.student_id === studentId) {
@@ -620,40 +642,36 @@ export default function FeesManagementPage() {
       ),
     },
     {
-      accessorKey: "is_enrollment_verified",
-      header: "Enrollment",
-      cell: ({ row }) => (
-        <Badge
-          variant={
-            row.original.is_enrollment_verified
-              ? "default"
-              : "secondary"
-          }
-          className="capitalize"
-        >
-          {row.original.is_enrollment_verified ? "Verified" : "Pending"}
-        </Badge>
-      ),
-    },
-    {
       accessorKey: "is_verifiedby_admin",
-      header: "Admin Verify",
+      header: "Admin",
       cell: ({ row }) => (
         <Badge
           variant={row.original.is_verifiedby_admin ? "default" : "destructive"}
           className="flex w-fit items-center gap-1 capitalize"
         >
           {row.original.is_verifiedby_admin ? (
-            <>
-              <ShieldCheck className="h-3 w-3" />
-              Verified
-            </>
+            <ShieldCheck className="h-3 w-3" />
           ) : (
-            <>
-              <ShieldAlert className="h-3 w-3" />
-              Pending
-            </>
+            <ShieldAlert className="h-3 w-3" />
           )}
+          {row.original.is_verifiedby_admin ? "Verified" : "Pending"}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "is_verifiedby_accountant",
+      header: "Account",
+      cell: ({ row }) => (
+        <Badge
+          variant={row.original.is_verifiedby_accountant ? "secondary" : "destructive"}
+          className="flex w-fit items-center gap-1 capitalize"
+        >
+          {row.original.is_verifiedby_accountant ? (
+            <DollarSign className="h-3 w-3" />
+          ) : (
+            <ShieldAlert className="h-3 w-3" />
+          )}
+          {row.original.is_verifiedby_accountant ? "Approved" : "Pending"}
         </Badge>
       ),
     },
@@ -666,16 +684,11 @@ export default function FeesManagementPage() {
           className="flex w-fit items-center gap-1 capitalize"
         >
           {row.original.is_verifiedby_examcell ? (
-            <>
-              <CheckSquare className="h-3 w-3" />
-              Approved
-            </>
+            <CheckSquare className="h-3 w-3" />
           ) : (
-            <>
-              <ShieldAlert className="h-3 w-3" />
-              Pending
-            </>
+            <ShieldAlert className="h-3 w-3" />
           )}
+          {row.original.is_verifiedby_examcell ? "Verified" : "Pending"}
         </Badge>
       ),
     },
@@ -688,16 +701,11 @@ export default function FeesManagementPage() {
           className="flex w-fit items-center gap-1 capitalize"
         >
           {row.original.is_locked ? (
-            <>
-              <Lock className="h-3 w-3" />
-              Locked
-            </>
+            <Lock className="h-3 w-3" />
           ) : (
-            <>
-              <Unlock className="h-3 w-3" />
-              Unlocked
-            </>
+            <Unlock className="h-3 w-3" />
           )}
+          {row.original.is_locked ? "Locked" : "Unlocked"}
         </Badge>
       ),
     },
@@ -791,42 +799,64 @@ export default function FeesManagementPage() {
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
-                
-                {/* --- ✅ NEW: Admin Status Controls --- */}
+
+                {/* --- Admin Quick Verify --- */}
                 <DropdownMenuItem
                   onClick={() => toggleStatus(student.student_id, "is_verifiedby_admin", student.is_verifiedby_admin)}
                   className="flex items-center cursor-pointer"
                 >
                   {student.is_verifiedby_admin ? (
                     <>
-                      <ShieldAlert className="mr-2 h-4 w-4 text-red-500" />
-                      <span>Unverify (Admin)</span>
+                      <ShieldAlert className="mr-2 h-4 w-4" />
+                      Unverify (Admin)
                     </>
                   ) : (
                     <>
-                      <ShieldCheck className="mr-2 h-4 w-4 text-green-500" />
-                      <span>Verify (Admin)</span>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Verify (Admin)
                     </>
                   )}
                 </DropdownMenuItem>
 
+                {/* --- Accountant Quick Verify --- */}
+                <DropdownMenuItem
+                  onClick={() => toggleStatus(student.student_id, "is_verifiedby_accountant", student.is_verifiedby_accountant)}
+                  className="flex items-center cursor-pointer"
+                >
+                  {student.is_verifiedby_accountant ? (
+                    <>
+                      <ShieldAlert className="mr-2 h-4 w-4" />
+                      Unverify (Accountant)
+                    </>
+                  ) : (
+                    <>
+                      <DollarSign className="mr-2 h-4 w-4" />
+                      Verify (Accountant)
+                    </>
+                  )}
+                </DropdownMenuItem>
+
+                {/* --- Exam Cell Quick Verify --- */}
                 <DropdownMenuItem
                   onClick={() => toggleStatus(student.student_id, "is_verifiedby_examcell", student.is_verifiedby_examcell)}
                   className="flex items-center cursor-pointer"
                 >
                   {student.is_verifiedby_examcell ? (
                     <>
-                      <ShieldAlert className="mr-2 h-4 w-4 text-red-500" />
-                      <span>Unverify (Exam Cell)</span>
+                      <ShieldAlert className="mr-2 h-4 w-4" />
+                      Unverify (Exam Cell)
                     </>
                   ) : (
                     <>
-                      <CheckSquare className="mr-2 h-4 w-4 text-blue-500" />
-                      <span>Verify (Exam Cell)</span>
+                      <CheckSquare className="mr-2 h-4 w-4" />
+                      Verify (Exam Cell)
                     </>
                   )}
                 </DropdownMenuItem>
 
+                <DropdownMenuSeparator />
+
+                {/* --- Profile Lock Controls --- */}
                 <DropdownMenuItem
                   onClick={() => toggleStatus(student.student_id, "is_locked", student.is_locked)}
                   className="flex items-center cursor-pointer"
@@ -838,7 +868,7 @@ export default function FeesManagementPage() {
                     </>
                   ) : (
                     <>
-                      <Lock className="mr-2 h-4 w-4 text-red-500" />
+                      <Lock className="mr-2 h-4 w-4 text-rose-500" />
                       <span>Lock Profile</span>
                     </>
                   )}
@@ -851,7 +881,6 @@ export default function FeesManagementPage() {
     },
   ]
 
-  // --- Table Instance ---
   const table = useReactTable({
     data: students,
     columns,
@@ -869,22 +898,20 @@ export default function FeesManagementPage() {
     },
   })
 
-  // --- Main Page Render ---
   return (
     <div className="p-4 md:p-8 space-y-6">
-      {/* 1. Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Fees Management
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Search or filter for students to add payments and view fee history.
-          </p>
+          <CardTitle className="text-3xl font-bold tracking-tight">
+            Student Management
+          </CardTitle>
+          <CardDescription className="text-muted-foreground mt-1">
+            Oversee academic progression, compliance, and verification across all cohorts.
+          </CardDescription>
         </div>
-      </div>
+        <div className="flex items-center gap-3"></div>
+      </CardHeader>
 
-      {/* 2. Error/Status Messages */}
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
