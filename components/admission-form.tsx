@@ -1451,7 +1451,12 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                     </div>
                 </div>
               </div>
-              
+
+              <div className="p-4 border rounded-lg bg-blue-50/30 border-blue-100 mt-4">
+                  <InputGroup label="Native Place" name="nativePlace" type="text" value={formData.nativePlace} onChange={handleChange} placeholder="Native Village/Town/Place" required className="max-w-md" />
+                  <p className="text-xs text-blue-600 mt-1 italic">Note: This is your permanent native place information.</p>
+              </div>
+
               <h4 className="text-lg font-bold text-gray-700 mt-6">Mobile Contacts</h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <InputGroup label="Student's Mobile No." name="studentMobileNo" type="tel" value={formData.studentMobileNo} onChange={handleChange} placeholder="Student's Mobile" required maxLength={10} />
