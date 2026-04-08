@@ -237,6 +237,8 @@ interface FormData {
   nata_marks_outOf: string;
   nata_monthYear: string;
 
+  nativePlace: string; // NEW: Native Place
+
   direct_second_year_instituteNameCode: string;
   direct_second_year_technicalBoard: string;
   direct_second_year_branchName: string;
@@ -432,6 +434,8 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
     nata_marks_obtained: "",
     nata_marks_outOf: "",
     nata_monthYear: "",
+
+    nativePlace: "", // NEW
 
     direct_second_year_instituteNameCode: "",
     direct_second_year_technicalBoard: "",
@@ -907,6 +911,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
         student_mobile_no: cleanedFormData.studentMobileNo,
         father_mobile_no: cleanedFormData.fatherMobileNo,
         mother_mobile_no: cleanedFormData.motherMobileNo,
+        native_place: cleanedFormData.nativePlace, // NEW
 
         // Address Details (JSONB strings)
         correspondence_details: JSON.stringify({
@@ -1039,9 +1044,39 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
             <section className="space-y-4 border-b pb-4 border-dashed border-gray-300">
                 <h3 className="text-xl font-bold text-gray-800">Application Status & Quota</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <InputGroup label="Form No. (Roll No.)" name="formNo" type="text" value={formData.formNo} onChange={handleChange} placeholder="e.g., KT2025/123" required subLabel="This will be used as the Roll Number." />
-                    <InputGroup label="Registration No." name="registrationNo" type="text" value={formData.registrationNo} onChange={handleChange} placeholder="Registration Number" required />
-                    <InputGroup label="Merit No." name="meritNo" type="text" value={formData.meritNo} onChange={handleChange} placeholder="Merit Rank" required />
+                    <InputGroup 
+                      label="Form No. (Roll No.)" 
+                      name="formNo" 
+                      type="text" 
+                      value={formData.formNo} 
+                      onChange={handleChange} 
+                      placeholder="KT2025/123" 
+                      disabled={true}
+                      subLabel="Filled by admin department (used as Roll Number)"
+                      inputClassName="bg-gray-100 italic"
+                    />
+                    <InputGroup 
+                      label="Registration No." 
+                      name="registrationNo" 
+                      type="text" 
+                      value={formData.registrationNo} 
+                      onChange={handleChange} 
+                      placeholder="Registration Number" 
+                      disabled={true}
+                      subLabel="Filled by admin department"
+                      inputClassName="bg-gray-100 italic"
+                    />
+                    <InputGroup 
+                      label="Merit No." 
+                      name="meritNo" 
+                      type="text" 
+                      value={formData.meritNo} 
+                      onChange={handleChange} 
+                      placeholder="Merit Rank" 
+                      disabled={true}
+                      subLabel="Filled by admin department"
+                      inputClassName="bg-gray-100 italic"
+                    />
                     <div className="space-y-1">
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Quota Selection <span className="text-red-500">*</span></label>
                       <Dropdown
@@ -1051,10 +1086,11 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                         onChange={handleDropdownChange}
                         optionLabel="label"
                         optionValue="value"
-                        placeholder="Select Quota (Please select any one)"
-                        required
-                        className="w-full p-inputtext-sm"
+                        placeholder="Select Quota"
+                        disabled={true}
+                        className="w-full p-inputtext-sm bg-gray-100"
                       />
+                      <p className="text-[10px] text-orange-600 font-bold mt-1 uppercase leading-tight">This field is restricted. It is filled by the Admin Department.</p>
                     </div>
                 </div>
                 
@@ -1324,6 +1360,7 @@ export default function AdmissionForm({ user }: AdmissionFormProps) {
                   </div>
                   <InputGroup label="Nationality" name="nationality" type="text" value={formData.nationality} onChange={handleChange} placeholder="e.g., INDIAN" required />
                   <InputGroup label="Place of Birth" name="placeOfBirth" type="text" value={formData.placeOfBirth} onChange={handleChange} placeholder="City of Birth" required />
+                  <InputGroup label="Native Place" name="nativePlace" type="text" value={formData.nativePlace} onChange={handleChange} placeholder="Native Village/Town" required />
                   <div className="space-y-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Domicile of Maharashtra <span className="text-red-500">*</span></label>
                     <Dropdown

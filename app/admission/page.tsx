@@ -4,10 +4,13 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import AdmissionForm from "@/components/admission-form"
+import TermsModal from "@/components/admission/TermsModal"
+
 
 export default function AdmissionPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [isTermsAccepted, setIsTermsAccepted] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -51,7 +54,7 @@ export default function AdmissionPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-     
+      <TermsModal onAccept={() => setIsTermsAccepted(true)} />
       <main className="flex-1 md:ml-4 pt-20 md:pt-0">
         <AdmissionForm user={user} />
       </main>
