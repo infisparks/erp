@@ -29,7 +29,7 @@ const AppColors = {
 /* ─── Static data ───────────────────────────────── */
 const quickActions = [
   { Icon: User,         label: "Profile",    color: "#1A3A6B", bg: "#E8F0FB", href: "/student/edit-admission" },
-  { Icon: FileText,     label: "Enrollment", color: "#1A3A6B", bg: "#E8F0FB", href: "/student/admission" },
+  { Icon: FileText,     label: "Yearly Registration", color: "#1A3A6B", bg: "#E8F0FB", href: "/student/registration" },
   { Icon: CalendarCheck,label: "Attendance", color: "#B8860B", bg: "#FFF6E5", href: "/student/attendance" },
   { Icon: BookOpen,     label: "Library",    color: "#2D6A3F", bg: "#E7F4ED", href: "/student/library" },
   { Icon: CreditCard,   label: "Fees",       color: "#B53030", bg: "#FFECEC", href: "/student/fees" },
