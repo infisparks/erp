@@ -81,12 +81,12 @@ export default function StudentDashboard() {
   if (loading) return (
     <div className="min-h-screen bg-[#F7F4EF] flex flex-col items-center justify-center gap-6">
        <div className="relative">
-          <Loader2 className="h-12 w-12 animate-spin text-[#1A3A6B]/20" strokeWidth={1.5} />
+          <Loader2 className="h-12 w-12 animate-spin text-[#1A3A6B]/20" strokeWidth={1} />
           <div className="absolute inset-0 flex items-center justify-center">
              <div className="h-2 w-2 bg-[#1A3A6B] rounded-full animate-pulse" />
           </div>
        </div>
-       <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#1A3A6B]/40 leading-none">AIKTC Digital Ledger Is Synchronizing</p>
+       <p className="text-[10px] font-normal uppercase tracking-[0.3em] text-[#1A3A6B]/40 leading-none">AIKTC Digital Ledger Is Synchronizing</p>
     </div>
   )
 
@@ -94,10 +94,10 @@ export default function StudentDashboard() {
     <div className="min-h-screen bg-[#F7F4EF] flex flex-col items-center justify-center p-8 text-center gap-6">
       <AlertCircle className="w-16 h-16 text-rose-500/20" />
       <div>
-         <p className="text-[#1A2340] font-black uppercase tracking-tight text-xl leading-none italic">Transmission Failure</p>
-         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2 px-12 leading-relaxed">Remote institutional server state unreachable</p>
+         <p className="text-[#1A2340] font-normal uppercase tracking-tight text-xl leading-none italic">Transmission Failure</p>
+         <p className="text-slate-400 text-xs font-normal uppercase tracking-widest mt-2 px-12 leading-relaxed">Remote institutional server state unreachable</p>
       </div>
-      <button onClick={() => window.location.reload()} className="h-12 px-8 bg-[#1A3A6B] text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-[#2E75C7] transition-all flex items-center gap-2 shadow-xl shadow-[#1A3A6B]/20">
+      <button onClick={() => window.location.reload()} className="h-12 px-8 bg-[#1A3A6B] text-white text-[10px] font-normal uppercase tracking-widest rounded-2xl hover:bg-[#2E75C7] transition-all flex items-center gap-2 shadow-xl shadow-[#1A3A6B]/20">
         <RefreshCw size={13} /> Re-establish Link
       </button>
     </div>
@@ -116,7 +116,6 @@ export default function StudentDashboard() {
           alt="AIKTC Campus" 
           className="absolute inset-0 w-full h-[350px] object-cover"
         />
-        {/* Modern Gradient Overlay */}
         <div 
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -124,17 +123,16 @@ export default function StudentDashboard() {
           }}
         />
         
-        {/* Header Content */}
         <div className="relative z-10 px-6 py-6 md:px-12 md:py-10 max-w-7xl mx-auto flex flex-row items-start justify-between">
           <div className="flex items-start gap-4">
             <div className="space-y-0.5">
-               <p className="text-white/60 font-black uppercase text-[8px] tracking-[0.2em] leading-none mb-1">AIKTC Student Portal</p>
-               <h2 className="text-2xl font-black text-white tracking-tighter leading-tight italic">
+               <p className="text-white/60 font-normal uppercase text-[8px] tracking-[0.2em] leading-none mb-1">AIKTC Student Portal</p>
+               <h2 className="text-2xl font-semibold text-white tracking-tighter leading-tight italic">
                   {student?.fullname || "Student Name"}
                </h2>
                <div className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 bg-[#4ADE80] rounded-full shadow-[0_0_8px_#4ADE80]" />
-                  <p className="text-white/90 font-bold text-[10px] uppercase tracking-wider">{student.courses?.name || "B.E. Engineering"}</p>
+                  <p className="text-white/90 font-medium text-[10px] uppercase tracking-wider">{student.courses?.name || "B.E. Engineering"}</p>
                </div>
             </div>
           </div>
@@ -164,7 +162,7 @@ export default function StudentDashboard() {
                   </div>
                   <div className="relative z-10 space-y-4">
                      <div className="flex justify-between items-center">
-                        <p className="text-[9px] font-black uppercase tracking-[0.4em] text-white/40 leading-none">Digital Student ID</p>
+                        <p className="text-[9px] font-medium uppercase tracking-[0.4em] text-white/40 leading-none">Digital Student ID</p>
                         <div className="flex items-center gap-3">
                            <CheckCircle2 size={14} className={isAdmitted ? "text-[#4ADE80]" : "text-white/20"} />
                            <div className="h-8 w-8 bg-[#FBF5E6] rounded-xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
@@ -173,18 +171,18 @@ export default function StudentDashboard() {
                         </div>
                      </div>
                      <div>
-                        <p className="text-xl font-black tracking-widest text-white leading-none">
+                        <p className="text-xl font-semibold tracking-widest text-white leading-none">
                            {student?.registration_no || student?.roll_number || 'AIKTC-2026-ST001'}
                         </p>
                      </div>
                      <div className="flex gap-2">
                         <div className="px-2.5 py-1 bg-[#4ADE80]/10 border border-[#4ADE80]/20 rounded-lg flex items-center gap-2">
                            <div className="h-1.5 w-1.5 bg-[#4ADE80] rounded-full" />
-                           <span className="text-[9px] font-bold text-[#4ADE80] uppercase tracking-wider">Active</span>
+                           <span className="text-[9px] font-medium text-[#4ADE80] uppercase tracking-wider">Active</span>
                         </div>
                         <div className="px-2.5 py-1 bg-[#60A5FA]/10 border border-[#60A5FA]/20 rounded-lg flex items-center gap-2">
                            <School size={10} className="text-[#60A5FA]" />
-                           <span className="text-[9px] font-bold text-[#60A5FA] uppercase tracking-wider">
+                           <span className="text-[9px] font-medium text-[#60A5FA] uppercase tracking-wider">
                               {student.courses?.name?.split(' ')[0] || 'Engg'}
                            </span>
                         </div>
@@ -195,12 +193,12 @@ export default function StudentDashboard() {
                {/* Verification Tracker Section */}
                <div className="bg-white rounded-[32px] border border-slate-100 p-6 space-y-6 shadow-sm">
                   <div className="flex items-center justify-between">
-                     <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#1A3A6B]">
+                     <h5 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#1A3A6B]">
                         Verification Progress
                      </h5>
                      <div className="flex items-center gap-2">
                         <div className="h-1 w-1 bg-[#4ADE80] rounded-full" />
-                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">Admin</span>
+                        <span className="text-[8px] font-medium text-slate-400 uppercase tracking-widest leading-none">Admin</span>
                      </div>
                   </div>
                   
@@ -226,7 +224,7 @@ export default function StudentDashboard() {
                   {!isFullyVerified && (
                      <div className="bg-[#1E293B] rounded-[24px] p-5 flex items-center gap-3">
                         <ShieldAlert size={18} className="text-amber-500 shrink-0" />
-                        <p className="text-white text-[10px] font-bold leading-relaxed tracking-tight">
+                        <p className="text-white text-[10px] font-medium leading-relaxed tracking-tight">
                            Portal access is restricted until complete administrative synchronization.
                         </p>
                      </div>
@@ -239,7 +237,7 @@ export default function StudentDashboard() {
                
                {/* Academic Services Grid */}
                <div className="space-y-6">
-                  <h3 className="text-lg font-black text-[#1A2340] tracking-tight">Academic Services</h3>
+                  <h3 className="text-lg font-semibold text-[#1A2340] tracking-tight">Academic Services</h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 md:gap-6">
                      {quickActions.map((action, i) => {
                         const isLocked = !isFullyVerified && action.label !== "Profile"
@@ -250,14 +248,14 @@ export default function StudentDashboard() {
                                     className="h-16 w-16 md:h-20 md:w-20 rounded-[24px] flex items-center justify-center transition-all duration-500 relative overflow-hidden shadow-sm hover:shadow-xl group-hover:-translate-y-1 border-2 border-white"
                                     style={{ backgroundColor: action.bg }}
                                  >
-                                    <action.Icon size={action.label === "More" ? 22 : 28} style={{ color: action.color }} strokeWidth={2} />
+                                    <action.Icon size={action.label === "More" ? 22 : 28} style={{ color: action.color }} strokeWidth={1.5} />
                                     {isLocked && (
                                        <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md">
                                           <ShieldAlert size={10} className="text-amber-500" />
                                        </div>
                                     )}
                                  </div>
-                                 <p className="text-[11px] font-black uppercase text-[#1A2340] tracking-wider group-hover:text-[#2E75C7] transition-colors">{action.label}</p>
+                                 <p className="text-[11px] font-medium uppercase text-[#1A2340] tracking-wider group-hover:text-[#2E75C7] transition-colors">{action.label}</p>
                               </div>
                            </Link>
                         )
@@ -266,32 +264,30 @@ export default function StudentDashboard() {
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
-                  {/* Announcements / Bulletins */}
                   <div className="md:col-span-7 space-y-6">
                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-black text-[#1A2340] tracking-tight">Announcements</h3>
-                        <span className="text-[11px] font-black text-[#2E75C7] uppercase cursor-pointer hover:underline">See All</span>
+                        <h3 className="text-lg font-semibold text-[#1A2340] tracking-tight">Announcements</h3>
+                        <span className="text-[11px] font-normal text-[#2E75C7] uppercase cursor-pointer hover:underline">See All</span>
                      </div>
                      <div className="space-y-4">
                         {announcements.map((ann, i) => (
                            <div key={i} className="flex gap-5 p-5 bg-white rounded-[24px] border border-slate-100 hover:border-slate-200 transition-all group cursor-pointer shadow-sm hover:shadow-md">
-                              <div className="h-12 w-12 bg-slate-50 rounded-2xl flex items-center justify-center text-xl shrink-0 group-hover:scale-110 transition-transform" style={{ backgroundColor: ann.bg }}>
+                              <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl shrink-0 group-hover:scale-110 transition-transform" style={{ backgroundColor: ann.bg }}>
                                  {ann.emoji}
                               </div>
                               <div className="min-w-0">
-                                 <p className="text-sm font-black text-[#1A2340] leading-none mb-1.5">{ann.title}</p>
-                                 <p className="text-[11px] text-slate-400 font-bold leading-relaxed">{ann.desc}</p>
+                                 <p className="text-sm font-medium text-[#1A2340] leading-none mb-1.5">{ann.title}</p>
+                                 <p className="text-[11px] text-slate-400 font-normal leading-relaxed">{ann.desc}</p>
                               </div>
                            </div>
                         ))}
                      </div>
                   </div>
 
-                  {/* Campus Feed */}
                   <div className="md:col-span-5 space-y-6">
                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-black text-[#1A2340] tracking-tight">Campus Feed</h3>
-                        <span className="text-[11px] font-black text-[#2E75C7] uppercase cursor-pointer">More</span>
+                        <h3 className="text-lg font-semibold text-[#1A2340] tracking-tight">Campus Feed</h3>
+                        <span className="text-[11px] font-normal text-[#2E75C7] uppercase cursor-pointer">More</span>
                      </div>
                      <div className="space-y-4">
                         {campusFeed.map((feed, i) => (
@@ -300,14 +296,14 @@ export default function StudentDashboard() {
                                  {feed.emoji}
                               </div>
                               <div className="flex-1 min-w-0">
-                                 <p className="text-sm font-black text-[#1A2340] mb-0.5 truncate">{feed.title}</p>
-                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{feed.time}</p>
+                                 <p className="text-sm font-medium text-[#1A2340] mb-0.5 truncate">{feed.title}</p>
+                                 <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{feed.time}</p>
                               </div>
                               <ArrowUpRight size={14} className="text-slate-200 group-hover:text-[#1A3A6B] transition-colors" />
                            </div>
                         ))}
                      </div>
-                     <button className="w-full py-4 bg-white border-2 border-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] text-[#1A3A6B] hover:border-[#1A3A6B] hover:bg-slate-50 transition-all">
+                     <button className="w-full py-4 bg-white border-2 border-slate-50 rounded-2xl text-[10px] font-semibold uppercase tracking-[0.3em] text-[#1A3A6B] hover:border-[#1A3A6B] hover:bg-slate-50 transition-all">
                         Synchronize Relay
                      </button>
                   </div>
@@ -330,9 +326,9 @@ function VerificationItem({ icon: Icon, label, status, isDone }: { icon: any, la
              <Icon size={isDone ? 16 : 14} strokeWidth={isDone ? 2.5 : 2} />
           </div>
           <div className="space-y-0.5">
-             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">{label}</p>
+             <p className="text-[8px] font-medium text-slate-400 uppercase tracking-widest leading-none">{label}</p>
              <p className={cn(
-                "text-xs font-black tracking-tight",
+                "text-xs font-normal tracking-tight",
                 isDone ? "text-[#166534]" : "text-[#1A2340]"
              )}>{status}</p>
           </div>

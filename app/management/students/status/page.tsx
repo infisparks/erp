@@ -6,15 +6,15 @@ import { SupabaseClient } from "@supabase/supabase-js"
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format } from "date-fns"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 // --- UI Components ---
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -23,6 +23,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // --- Icons ---
 import {
@@ -30,20 +38,24 @@ import {
   AlertTriangle,
   UserRound,
   ShieldCheck,
-  ShieldAlert,
   Lock,
   Unlock,
   ArrowLeft,
   Calendar,
   History,
   GraduationCap,
-  Edit,
+  Edit3,
   Save,
-  CheckCircle2,
-  XCircle,
   Building2,
   CreditCard,
   ClipboardList,
+  MoreVertical,
+  ChevronRight,
+  Mail,
+  Fingerprint,
+  Download,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -76,87 +88,49 @@ interface AcademicYearEnrollment {
   installment_dates: any[] | null
 }
 
-// --- Avatar Component ---
-const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, onUpdate?: () => void, className?: string }> = ({ src, alt, supabase, onUpdate, className = "h-20 w-20" }) => {
+interface SemesterRegistration {
+  id: number
+  semester_name: string
+  promotion_status: string
+  status: string
+  is_verifiedby_admin: boolean
+  is_verifiedby_accountant: boolean
+  is_verifiedby_examcell: boolean
+  total_fee: number
+  net_payable_fee: number
+  created_at: string
+}
+
+const StudentAvatar: React.FC<{ src: string | null, alt: string | null, supabase: SupabaseClient, onUpdate?: () => void, className?: string }> = ({ src, alt, supabase, onUpdate, className = "h-24 w-24" }) => {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   
-  const isHeic = useMemo(() => {
-    const s = src?.toLowerCase() || '';
-    return s.endsWith('.heic') || s.endsWith('.heif');
-  }, [src]);
-  
-  const { publicUrl, rawUrl } = useMemo(() => {
-    if (!src) return { publicUrl: null, rawUrl: null }
-    if (src.startsWith('http')) return { publicUrl: src, rawUrl: src }
-    
+  const { publicUrl } = useMemo(() => {
+    if (!src) return { publicUrl: null }
     const cleanPath = src.replace(/^\/+/, '');
-    
-    // For standard images, we use getPublicUrl normally
-    const { data: rData } = supabase.storage.from('student_documents').getPublicUrl(cleanPath);
-    
-    if (isHeic) {
-      // For HEIC, we use the transformation URL specifically designed to output JPG/WebP
-      // This is the universal format fix for candidates with high-efficiency uploads
-      const transformUrl = `https://jjldxdgbrkhtjjwpbezk.supabase.co/storage/v1/render/image/public/student_documents/${cleanPath}?width=500&height=500&format=webp&quality=90`
-      return { publicUrl: transformUrl, rawUrl: rData.publicUrl }
-    }
-
-    return { 
-      publicUrl: rData.publicUrl, 
-      rawUrl: rData.publicUrl 
-    }
-  }, [src, isHeic, supabase])
+    const { data } = supabase.storage.from('student_documents').getPublicUrl(cleanPath);
+    return { publicUrl: data.publicUrl }
+  }, [src, supabase])
 
   return (
-    <div className="relative group">
-      <div className={`${className} bg-slate-900 rounded-3xl p-0.5 border-4 border-white/20 shadow-2xl overflow-hidden relative transition-all duration-500 ring-1 ring-white/10`}>
-        {publicUrl && !imgError && (
+    <div className="relative group cursor-pointer" onClick={onUpdate}>
+      <div className={cn(className, "rounded-2xl overflow-hidden border-4 border-white/10 shadow-2xl bg-slate-800 transition-all duration-300 group-hover:scale-105 group-hover:border-indigo-500/50")}>
+        {publicUrl && !imgError ? (
           <img 
             src={publicUrl} 
-            alt={alt || "Student Photo"} 
-            className={`h-full w-full object-cover transition-all duration-700 ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+            alt={alt || "Student"} 
+            className={cn("h-full w-full object-cover transition-opacity duration-500", imgLoaded ? "opacity-100" : "opacity-0")}
             onLoad={() => setImgLoaded(true)}
             onError={() => setImgError(true)}
           />
-        )}
-        
-        {(!imgLoaded || imgError) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-tr from-slate-900 to-blue-900 text-blue-200/40 px-4 text-center">
-             <UserRound className={`h-12 w-12 mb-2 transition-all ${imgError ? 'text-rose-500/50 animate-pulse' : 'animate-pulse'}`} />
-             <span className="text-[8px] font-black uppercase tracking-[0.2em]">
-                {imgError ? 'Format Error' : (isHeic ? 'Optimizing' : 'Loading')}
-             </span>
-             {imgError && (
-                <span className="text-[6px] mt-2 opacity-50 block leading-tight font-medium">Browser cannot render this format natively. Please Update Photo to JPG/PNG.</span>
-             )}
+        ) : (
+          <div className="h-full w-full flex items-center justify-center bg-slate-800 text-slate-500">
+            <UserRound className="h-1/2 w-1/2 opacity-20" />
           </div>
         )}
-      </div>
-
-      <div className="absolute -top-3 -right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0 z-50">
-        {onUpdate && (
-          <Button 
-            variant="secondary" 
-            size="icon"
-            className="h-8 w-8 rounded-xl bg-white text-slate-900 shadow-2xl hover:bg-slate-100 border-none group/btn"
-            onClick={onUpdate}
-            title="Upload New Photo"
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-        )}
-        {src && (
-          <a 
-            href={rawUrl || '#'}
-            target="_blank" 
-            rel="noreferrer"
-            className="h-8 w-8 bg-blue-600 rounded-xl shadow-xl flex items-center justify-center hover:bg-blue-700 text-white"
-            title="View Raw Storage File"
-          >
-             <History className="h-4 w-4" />
-          </a>
-        )}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <Edit3 className="text-white h-6 w-6" />
+        </div>
       </div>
     </div>
   )
@@ -170,108 +144,44 @@ function StudentStatusHistoryContent() {
 
   const [student, setStudent] = useState<StudentProfile | null>(null)
   const [history, setHistory] = useState<AcademicYearEnrollment[]>([])
+  const [semesters, setSemesters] = useState<SemesterRegistration[]>([])
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  
-  // --- State for Student Photo Update ---
-  const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-
-  const handlePhotoUpdate = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file || !student) return
-
-    try {
-      setIsUpdatingPhoto(true)
-      const fileExt = file.name.split('.').pop()
-      const fileName = `photo_${student.id}_${Date.now()}.${fileExt}`
-      const filePath = `profile_photos/${fileName}`
-
-      const { data, error } = await supabase.storage
-        .from('student_documents')
-        .upload(filePath, file)
-
-      if (error) throw error
-
-      // Update student record
-      const { error: updateError } = await supabase
-        .from('students')
-        .update({ photo_path: filePath })
-        .eq('id', student.id)
-
-      if (updateError) throw updateError
-
-      toast.success("Profile photo updated successfully! Refreshing...")
-      setTimeout(() => window.location.reload(), 1500)
-    } catch (err: any) {
-      toast.error(`Update failed: ${err.message}`)
-    } finally {
-      setIsUpdatingPhoto(false)
-    }
-  }
 
   const fetchData = useCallback(async () => {
     if (!studentId) return
     setLoading(true)
-    setError(null)
     try {
-      // 1. Fetch Student Profile
-      const { data: sData, error: sErr } = await supabase
-        .from("students")
-        .select("id, fullname, roll_number, email, photo_path")
-        .eq("id", studentId)
-        .single()
-      
+      const { data: sData, error: sErr } = await supabase.from("students").select("*").eq("id", studentId).single()
       if (sErr) throw sErr
       setStudent(sData)
 
-      // 2. Fetch Academic Year History
       const { data: hData, error: hErr } = await supabase
         .from("student_academic_years")
-        .select(`
-          id,
-          academic_year_name,
-          academic_year_session,
-          is_locked,
-          is_verified_by_admin,
-          is_verified_by_account,
-          is_verified_by_examcell,
-          is_eligible_for_next_year,
-          created_at,
-          total_fee,
-          scholarship_amount,
-          net_payable_fee,
-          payment_plan,
-          installment_dates,
-          course:courses ( name ),
-          scholarship_category:scholarship_categories ( name )
-        `)
+        .select(`*, course:courses(name), scholarship_category:scholarship_categories(name)`)
         .eq("student_id", studentId)
         .order("created_at", { ascending: false })
 
-      if (hErr) throw hErr
+      const { data: semsData, error: semsErr } = await supabase
+        .from("student_semesters")
+        .select(`*, semesters(name)`)
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false })
 
-      const flattenedHistory = (hData as any[]).map(item => ({
-        id: item.id,
-        academic_year_name: item.academic_year_name,
-        academic_year_session: item.academic_year_session,
-        is_locked: item.is_locked,
-        is_verified_by_admin: item.is_verified_by_admin,
-        is_verified_by_account: item.is_verified_by_account,
-        is_verified_by_examcell: item.is_verified_by_examcell,
-        is_eligible_for_next_year: item.is_eligible_for_next_year,
+      if (hErr || semsErr) throw hErr || semsErr
+
+      setHistory(hData.map((item: any) => ({
+        ...item,
         course_name: item.course?.name || "N/A",
-        created_at: item.created_at,
-        total_fee: item.total_fee || 0,
-        scholarship_amount: item.scholarship_amount || 0,
-        net_payable_fee: item.net_payable_fee || 0,
-        scholarship_category_name: item.scholarship_category?.name || "None",
-        payment_plan: item.payment_plan,
-        installment_dates: item.installment_dates || []
-      }))
+        scholarship_category_name: item.scholarship_category?.name || "None"
+      })))
 
-      setHistory(flattenedHistory)
+      setSemesters(semsData.map((s: any) => ({
+        ...s,
+        semester_name: s.semesters?.name || "Unknown"
+      })))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -279,367 +189,335 @@ function StudentStatusHistoryContent() {
     }
   }, [supabase, studentId])
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const toggleStatus = async (enrollmentId: number, field: string, currentValue: boolean) => {
-    setUpdatingId(enrollmentId)
+  const handleUpdateField = async (id: number, table: "student_academic_years" | "student_semesters", field: string, value: any) => {
+    setUpdatingId(id)
     try {
-      const { error } = await supabase
-        .from("student_academic_years")
-        .update({ [field]: !currentValue })
-        .eq("id", enrollmentId)
-
+      const { error } = await supabase.from(table).update({ [field]: value }).eq("id", id)
       if (error) throw error
-
-      setHistory(prev => prev.map(item => 
-        item.id === enrollmentId ? { ...item, [field]: !currentValue } : item
-      ))
+      
+      if (table === "student_academic_years") {
+        setHistory(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+      } else {
+        setSemesters(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+      }
+      toast.success("Record updated successfully")
     } catch (err: any) {
-      setError(`Failed to update: ${err.message}`)
+      toast.error(err.message)
     } finally {
       setUpdatingId(null)
     }
   }
 
-  const updateYearDetails = async (enrollmentId: number, data: Partial<AcademicYearEnrollment>) => {
-    setUpdatingId(enrollmentId)
-    try {
-      const { error } = await supabase
-        .from("student_academic_years")
-        .update({
-          total_fee: data.total_fee,
-          scholarship_amount: data.scholarship_amount,
-          net_payable_fee: data.net_payable_fee,
-          payment_plan: data.payment_plan
-        })
-        .eq("id", enrollmentId)
-
-      if (error) throw error
-
-      setHistory(prev => prev.map(item => 
-        item.id === enrollmentId ? { ...item, ...data } : item
-      ))
-    } catch (err: any) {
-      setError(`Failed to update details: ${err.message}`)
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-
-  if (!studentId) {
-    return (
-      <div className="p-8 flex flex-col items-center justify-center text-slate-500 gap-4">
-        <AlertTriangle className="h-12 w-12 text-amber-500" />
-        <h2 className="text-xl font-bold">No Student ID Provided</h2>
-        <Button onClick={() => router.back()} variant="outline">Go Back</Button>
-      </div>
-    )
-  }
+  if (loading) return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="relative">
+            <Loader2 className="h-12 w-12 animate-spin text-indigo-600" />
+            <div className="absolute inset-0 blur-xl bg-indigo-500/20 animate-pulse"></div>
+        </div>
+        <p className="mt-4 text-slate-500 font-medium animate-pulse">Synchronizing Academic Data...</p>
+    </div>
+  )
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      
-      <div className="flex items-center gap-4">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => router.back()}
-          className="rounded-full hover:bg-white shadow-sm"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-            Academic Journey
-          </h1>
-          <p className="text-slate-500">Manage enrollment verification and data locking history</p>
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 p-6 md:p-10">
+      <div className="max-w-7xl mx-auto space-y-8">
+        
+        {/* Header Navigation */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" onClick={() => router.back()} className="rounded-xl shadow-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Student Governance</h1>
+              <p className="text-sm text-slate-500">History and verification management portal</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border-slate-200 dark:border-slate-800 font-semibold gap-2">
+               <Download className="h-4 w-4" /> Export Report
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {loading ? (
-        <div className="h-96 flex flex-col items-center justify-center gap-4">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-          <p className="text-slate-500">Retrieving student records...</p>
-        </div>
-      ) : error ? (
-        <Alert variant="destructive" className="shadow-lg border-red-200">
-          <AlertTriangle className="h-5 w-5" />
-          <AlertTitle>Data Fetch Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : (
-        <>
-          {/* --- Executive Profile Header --- */}
-          {student && (
-            <Card className="border-none shadow-2xl bg-gradient-to-br from-indigo-900 via-blue-900 to-indigo-900 text-white overflow-hidden relative min-h-[180px]">
-              {/* Cinematic Background Decoration */}
-              <div className="absolute top-0 right-0 p-8 opacity-20 transform translate-x-10 -translate-y-10">
-                <GraduationCap className="h-64 w-64 text-blue-400 rotate-12" />
+        {/* Profile Glass Card */}
+        {student && (
+          <div className="relative group overflow-hidden rounded-[2rem] bg-slate-900 p-8 shadow-2xl transition-all duration-500">
+            <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 opacity-10">
+                <GraduationCap className="h-64 w-64 text-indigo-400 rotate-12" />
+            </div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(79,70,229,0.15),transparent)]"></div>
+            
+            <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+              <StudentAvatar 
+                src={student.photo_path} 
+                alt={student.fullname} 
+                supabase={supabase}
+              />
+              <div className="flex-1 text-center md:text-left">
+                <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2">
+                   <h2 className="text-3xl font-black text-white tracking-tight">{student.fullname}</h2>
+                   <Badge className="w-fit mx-auto md:mx-0 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-mono tracking-tighter">
+                      {student.roll_number}
+                   </Badge>
+                </div>
+                <div className="flex flex-wrap justify-center md:justify-start gap-4">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm font-medium">
+                    <Mail className="h-4 w-4 text-indigo-400" /> {student.email}
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-400 text-sm font-medium">
+                    <Fingerprint className="h-4 w-4 text-emerald-400" /> ID: {student.id}
+                  </div>
+                </div>
               </div>
-              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
-              
-              <CardContent className="p-8 flex flex-col md:flex-row items-center gap-10 relative z-10 h-full">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept="image/jpeg,image/png,image/jpg" 
-                  onChange={handlePhotoUpdate}
-                />
-                <StudentAvatar 
-                  src={student.photo_path} 
-                  alt={student.fullname} 
-                  supabase={supabase} 
-                  className="h-32 w-32 md:h-36 md:w-36"
-                  onUpdate={() => fileInputRef.current?.click()}
-                />
-                
-                <div className="flex-1 text-center md:text-left space-y-4">
-                  <div>
-                     <h2 className="text-4xl font-black tracking-tight">{student.fullname}</h2>
-                     <span className="text-blue-300 font-mono text-sm tracking-widest uppercase opacity-75">{student.roll_number}</span>
-                  </div>
-                  
-                  <div className="flex flex-wrap justify-center md:justify-start gap-3">
-                    <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-1.5 rounded-xl backdrop-blur-md">
-                      <UserRound className="h-4 w-4 text-blue-300" />
-                      <span className="text-xs font-semibold tracking-tight">{student.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-1.5 rounded-xl backdrop-blur-md">
-                      <History className="h-4 w-4 text-emerald-400" />
-                      <span className="text-xs font-semibold tracking-tight">System ID: #{student.id}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white/5 backdrop-blur-xl p-6 rounded-3xl border border-white/10 text-center min-w-[180px] shadow-sm transform hover:scale-105 transition-transform">
-                  <span className="block text-[10px] uppercase tracking-[0.2em] text-blue-300 font-black mb-2 opacity-60">Academic Milestones</span>
-                  <div className="flex items-baseline justify-center gap-1">
-                     <span className="text-5xl font-black text-white">{history.length}</span>
-                     <span className="text-xs uppercase text-blue-400 font-bold tracking-tighter italic">Stages</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* --- History Management Grid --- */}
-          <Card className="border-none shadow-xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
-            <CardHeader className="border-b bg-slate-50/50 dark:bg-slate-800/50">
-              <CardTitle className="text-xl flex items-center gap-2 text-slate-700 dark:text-slate-200">
-                <Calendar className="h-5 w-5 text-blue-600" />
-                Enrollment History & Status
-              </CardTitle>
-              <CardDescription>Toggle verification and locking for each academic year record.</CardDescription>
+              <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
+                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm text-center">
+                    <p className="text-[10px] uppercase font-bold text-indigo-400 tracking-widest mb-1">Records</p>
+                    <p className="text-2xl font-black text-white">{history.length + semesters.length}</p>
+                 </div>
+                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm text-center">
+                    <p className="text-[10px] uppercase font-bold text-emerald-400 tracking-widest mb-1">Active</p>
+                    <p className="text-2xl font-black text-white">{history.filter(h => !h.is_locked).length}</p>
+                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Records Section */}
+        <div className="grid grid-cols-1 gap-8">
+          <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-900 rounded-[1.5rem] overflow-hidden">
+            <CardHeader className="border-b border-slate-50 dark:border-slate-800 px-8 py-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl font-bold flex items-center gap-2">
+                    <History className="h-5 w-5 text-indigo-600" /> Academic Timeline
+                  </CardTitle>
+                  <CardDescription>Comprehensive log of sessions and semester enrollments</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                   <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Verified</span>
+                   </div>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
+            <CardContent className="p-0">
               <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent text-xs uppercase tracking-tighter">
-                    <TableHead className="w-[200px]">Academic Year</TableHead>
-                    <TableHead>Course Details</TableHead>
-                    <TableHead className="text-center">Verification Pipeline (Multi-Stage)</TableHead>
-                    <TableHead className="text-center w-[120px]">Record Status</TableHead>
-                    <TableHead className="text-right">History</TableHead>
+                <TableHeader className="bg-slate-50/50 dark:bg-slate-800/50">
+                  <TableRow className="hover:bg-transparent border-b border-slate-100 dark:border-slate-800">
+                    <TableHead className="px-8 font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Target Term</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Financial Summary</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Verification Pipeline</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Governance</TableHead>
+                    <TableHead className="px-8 text-right font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {history.length > 0 ? (
-                    history.map((item) => (
-                      <TableRow key={item.id} className="group hover:bg-slate-50 transition-colors">
-                        <TableCell className="font-bold text-slate-700 dark:text-slate-300">
-                          <div className="flex flex-col">
-                             <div className="flex items-center gap-1.5">
-                                <span>{item.academic_year_name}</span>
-                                <EditYearDialog item={item} onUpdate={(data) => updateYearDetails(item.id, data)} />
-                             </div>
-                             <span className="text-[10px] text-slate-400 font-mono tracking-tight">{item.academic_year_session}</span>
+                  {/* Academic Years */}
+                  {history.map((item) => (
+                    <TableRow key={item.id} className="group hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-all border-b border-slate-50 dark:border-slate-800">
+                      <TableCell className="px-8 py-6">
+                        <div className="flex flex-col">
+                           <span className="font-bold text-slate-900 dark:text-slate-200 text-base">{item.academic_year_name}</span>
+                           <span className="text-xs text-slate-400 font-mono mt-0.5">{item.academic_year_session} • {item.course_name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">₹{item.net_payable_fee.toLocaleString()}</span>
+                            <Badge variant="outline" className="text-[9px] h-4 py-0 font-bold bg-indigo-50 text-indigo-600 border-indigo-100">
+                              {item.scholarship_category_name}
+                            </Badge>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-slate-600 font-medium text-sm">
-                           <div className="flex flex-col gap-1">
-                              <span className="font-bold">{item.course_name}</span>
-                              <div className="flex items-center gap-2">
-                                 <Badge variant="outline" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold text-blue-500 border-blue-100 bg-blue-50">
-                                    {item.scholarship_category_name || "Self-Financed"}
-                                 </Badge>
-                                 <span className="text-[10px] text-slate-400 font-semibold tracking-tight">Fee: ₹{item.net_payable_fee.toLocaleString()}</span>
-                              </div>
-                              <div className="mt-1.5 pt-1.5 border-t border-slate-50 flex flex-col gap-1">
-                                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                                    {item.payment_plan === 'Installment' ? (
-                                      <Badge variant="secondary" className="bg-amber-50 text-amber-600 border-amber-100 flex items-center gap-1 text-[8px] h-4 py-0 font-black">
-                                         <Calendar className="h-2 w-2" /> {item.payment_plan}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="outline" className="text-slate-400 border-slate-100 flex items-center gap-1 text-[8px] h-4 py-0 font-medium">
-                                         <CreditCard className="h-2 w-2" /> {item.payment_plan || 'One Time'}
-                                      </Badge>
-                                    )}
-                                 </div>
-                                 {item.payment_plan === 'Installment' && item.installment_dates && item.installment_dates.length > 0 && (
-                                   <div className="bg-slate-50/50 p-1.5 rounded-lg border border-slate-100/50 space-y-1 mt-0.5">
-                                      {item.installment_dates.map((inst: any, idx: number) => (
-                                         <div key={idx} className="flex justify-between items-center text-[9px] font-mono leading-none">
-                                            <span className="text-slate-400 italic">#{idx+1} {inst.date ? inst.date : 'N/A'}</span>
-                                            <span className="font-bold text-slate-600">₹{Number(inst.amount).toLocaleString()}</span>
-                                         </div>
-                                      ))}
-                                   </div>
-                                 )}
-                              </div>
-                           </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                           <div className="grid grid-cols-3 gap-2 max-w-[300px] mx-auto">
-                              <VerificationSwitch 
-                                label="Admin" 
-                                icon={<ShieldCheck className="h-3 w-3" />} 
-                                checked={item.is_verified_by_admin} 
-                                onToggle={() => toggleStatus(item.id, 'is_verified_by_admin', item.is_verified_by_admin)}
-                                disabled={updatingId === item.id}
-                              />
-                              <VerificationSwitch 
-                                label="Account" 
-                                icon={<CreditCard className="h-3 w-3" />} 
-                                checked={item.is_verified_by_account} 
-                                onToggle={() => toggleStatus(item.id, 'is_verified_by_account', item.is_verified_by_account)}
-                                disabled={updatingId === item.id}
-                              />
-                              <VerificationSwitch 
-                                label="Exam" 
-                                icon={<ClipboardList className="h-3 w-3" />} 
-                                checked={item.is_verified_by_examcell} 
-                                onToggle={() => toggleStatus(item.id, 'is_verified_by_examcell', item.is_verified_by_examcell)}
-                                disabled={updatingId === item.id}
-                              />
-                           </div>
-                        </TableCell>
+                          <span className="text-[10px] text-slate-400 italic">Plan: {item.payment_plan || 'One Time'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                         <div className="flex items-center justify-center gap-4">
+                            <PipelineCheckbox 
+                               label="ADM" 
+                               checked={item.is_verified_by_admin} 
+                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_admin", v)} 
+                               disabled={updatingId === item.id}
+                            />
+                            <PipelineCheckbox 
+                               label="ACC" 
+                               checked={item.is_verified_by_account} 
+                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_account", v)} 
+                               disabled={updatingId === item.id}
+                            />
+                            <PipelineCheckbox 
+                               label="EXM" 
+                               checked={item.is_verified_by_examcell} 
+                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_examcell", v)} 
+                               disabled={updatingId === item.id}
+                            />
+                         </div>
+                      </TableCell>
+                      <TableCell>
+                         <div className="flex items-center justify-center gap-6">
+                            <div className="flex flex-col items-center gap-1">
+                               <Switch 
+                                 checked={item.is_eligible_for_next_year} 
+                                 onCheckedChange={(v) => handleUpdateField(item.id, "student_academic_years", "is_eligible_for_next_year", v)}
+                                 className="scale-75 data-[state=checked]:bg-emerald-500"
+                               />
+                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter">Eligible</span>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                               <Switch 
+                                 checked={item.is_locked} 
+                                 onCheckedChange={(v) => handleUpdateField(item.id, "student_academic_years", "is_locked", v)}
+                                 className="scale-75 data-[state=checked]:bg-rose-500"
+                               />
+                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter">Locked</span>
+                            </div>
+                         </div>
+                      </TableCell>
+                      <TableCell className="px-8 text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800">
+                               <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48 rounded-xl">
+                            <DropdownMenuLabel>Year Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <EditYearDialog item={item} onUpdate={(d) => {
+                               Object.entries(d).forEach(([k, v]) => handleUpdateField(item.id, "student_academic_years", k, v))
+                            }} />
+                            <DropdownMenuItem className="text-rose-500">
+                                <Lock className="h-4 w-4 mr-2" /> Force Lock Record
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
 
-                        <TableCell className="text-center">
-                          <div className="flex flex-col items-center gap-3">
-                             {/* Eligibility Toggle */}
-                             <div className="flex flex-col items-center gap-1">
-                                <Switch 
-                                  checked={item.is_eligible_for_next_year}
-                                  onCheckedChange={() => toggleStatus(item.id, 'is_eligible_for_next_year', item.is_eligible_for_next_year)}
-                                  disabled={updatingId === item.id}
-                                  className="scale-75 data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-rose-600"
-                                />
-                                {item.is_eligible_for_next_year ? (
-                                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 h-4 px-1 text-[7px] uppercase tracking-tighter font-black">
-                                    Eligible
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-rose-50 text-rose-700 border-rose-100 h-4 px-1 text-[7px] uppercase tracking-tighter font-black">
-                                    Blocked
-                                  </Badge>
-                                )}
-                             </div>
-
-                             {/* Lock Toggle */}
-                             <div className="flex flex-col items-center gap-1">
-                                <Switch 
-                                  checked={item.is_locked}
-                                  onCheckedChange={() => toggleStatus(item.id, 'is_locked', item.is_locked)}
-                                  disabled={updatingId === item.id}
-                                  className="scale-75 data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-slate-300"
-                                />
-                                {item.is_locked ? (
-                                  <Badge className="bg-blue-50 text-blue-700 border-blue-100 h-4 px-1 text-[7px] uppercase font-black">
-                                    <Lock className="h-2 w-2 mr-1" /> Locked
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-slate-50 text-slate-500 border-slate-100 h-4 px-1 text-[7px] uppercase font-black">
-                                    <Unlock className="h-2 w-2 mr-1" /> Open
-                                  </Badge>
-                                )}
-                             </div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-slate-400 text-[10px] text-right font-mono">
-                          {format(new Date(item.created_at), 'dd MMM yy')}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="h-64 text-center">
-                         <div className="flex flex-col items-center gap-2 text-slate-400">
-                            <History className="h-10 w-10 opacity-20" />
-                            <p>No enrollment history found for this student.</p>
+                  {/* Semesters Section Divider */}
+                  {semesters.length > 0 && (
+                    <TableRow className="bg-slate-100/30 dark:bg-slate-800/30 border-none">
+                      <TableCell colSpan={5} className="px-8 py-3">
+                         <div className="flex items-center gap-2">
+                            <div className="h-px flex-1 bg-slate-200 dark:border-slate-700"></div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">Direct Semester Entries</span>
+                            <div className="h-px flex-1 bg-slate-200 dark:border-slate-700"></div>
                          </div>
                       </TableCell>
                     </TableRow>
                   )}
+
+                  {/* Semesters */}
+                  {semesters.map((s) => (
+                    <TableRow key={s.id} className="group hover:bg-slate-50/80 dark:hover:bg-slate-800/30 border-b border-slate-50 dark:border-slate-800">
+                      <TableCell className="px-8 py-4">
+                        <div className="flex items-center gap-3">
+                           <div className="h-8 w-1 bg-indigo-500 rounded-full opacity-40 group-hover:opacity-100 transition-opacity"></div>
+                           <div className="flex flex-col">
+                              <span className="font-bold text-slate-700 dark:text-slate-300">{s.semester_name}</span>
+                              <Badge variant="secondary" className="w-fit text-[8px] h-3.5 px-1 bg-slate-100 text-slate-500 uppercase font-black">
+                                 {s.status}
+                              </Badge>
+                           </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-bold text-emerald-600">₹{s.net_payable_fee.toLocaleString()}</span>
+                      </TableCell>
+                      <TableCell>
+                         <div className="flex items-center justify-center gap-4">
+                            <PipelineCheckbox label="ADM" checked={s.is_verifiedby_admin} onToggle={(v) => handleUpdateField(s.id, "student_semesters", "is_verifiedby_admin", v)} disabled={updatingId === s.id} />
+                            <PipelineCheckbox label="ACC" checked={s.is_verifiedby_accountant} onToggle={(v) => handleUpdateField(s.id, "student_semesters", "is_verifiedby_accountant", v)} disabled={updatingId === s.id} />
+                            <PipelineCheckbox label="EXM" checked={s.is_verifiedby_examcell} onToggle={(v) => handleUpdateField(s.id, "student_semesters", "is_verifiedby_examcell", v)} disabled={updatingId === s.id} />
+                         </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                               <Button variant="outline" size="sm" className="h-7 text-[10px] font-black uppercase rounded-lg border-slate-200 shadow-sm">
+                                  {s.promotion_status}
+                               </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="rounded-xl">
+                               {['Eligible', 'Hold', 'Drop'].map((status) => (
+                                 <DropdownMenuItem key={status} onClick={() => handleUpdateField(s.id, "student_semesters", "promotion_status", status)}>
+                                    {status === s.promotion_status && <CheckCircle2 className="h-3 w-3 mr-2 text-emerald-500" />}
+                                    {status}
+                                 </DropdownMenuItem>
+                               ))}
+                            </DropdownMenuContent>
+                         </DropdownMenu>
+                      </TableCell>
+                      <TableCell className="px-8 text-right font-mono text-[10px] text-slate-400">
+                        {format(new Date(s.created_at), 'dd/MM/yyyy')}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
+        </div>
 
-          {/* --- Admin Guidelines --- */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Alert className="bg-emerald-50 border-emerald-100 flex gap-4 items-start py-6">
-               <ShieldCheck className="h-6 w-6 text-emerald-600 mt-0.5" />
-               <div>
-                  <AlertTitle className="text-emerald-800 font-bold text-lg">Next-Year Eligibility</AlertTitle>
-                  <AlertDescription className="text-emerald-600 text-sm leading-relaxed">
-                    Setting this to 'Eligible' (Green) allows the student to register themselves for the next academic year session.
-                  </AlertDescription>
-               </div>
-            </Alert>
-            <Alert className="bg-rose-50 border-rose-100 flex gap-4 items-start py-6">
-               <Lock className="h-6 w-6 text-rose-600 mt-0.5" />
-               <div>
-                  <AlertTitle className="text-rose-800 font-bold text-lg">Data Integrity Lock</AlertTitle>
-                  <AlertDescription className="text-rose-600 text-sm leading-relaxed">
-                    Locking a year restricts the student from modifying their self-registration or profile data associated with that specific academic term.
-                  </AlertDescription>
-               </div>
-            </Alert>
-          </div>
-        </>
-      )}
+        {/* Info Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <InfoCard 
+             icon={<ShieldCheck className="text-emerald-500" />} 
+             title="Eligibility Protocol" 
+             description="Marking 'Eligible' enables self-service registration for upcoming sessions in the student portal." 
+           />
+           <InfoCard 
+             icon={<Lock className="text-rose-500" />} 
+             title="Lock Mechanism" 
+             description="Locks prevent students from altering bio-data or registration details for that specific term." 
+           />
+           <InfoCard 
+             icon={<Building2 className="text-indigo-500" />} 
+             title="Triple-Check" 
+             description="Final verification requires Admin, Account, and Exam Cell flags to be synchronized." 
+           />
+        </div>
+
+      </div>
     </div>
   )
 }
 
-const StudentDetailLoading = () => (
-    <div className="p-8 flex items-center justify-center min-h-[500px] gap-3">
-        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
-        <p className="text-lg font-medium text-slate-600 tracking-tight">Accessing Academic Archives...</p>
+// --- Specialized UI Components ---
+
+const PipelineCheckbox: React.FC<{ label: string, checked: boolean, onToggle: (val: boolean) => void, disabled: boolean }> = ({ label, checked, onToggle, disabled }) => (
+  <div className="flex flex-col items-center gap-1.5 group/check">
+    <div 
+      className={cn(
+        "h-9 w-9 rounded-xl border-2 flex items-center justify-center transition-all cursor-pointer",
+        checked ? "bg-emerald-50 border-emerald-500 text-emerald-600 shadow-lg shadow-emerald-500/10" : "bg-white border-slate-200 text-slate-300",
+        disabled && "opacity-50 cursor-not-allowed"
+      )}
+      onClick={() => !disabled && onToggle(!checked)}
+    >
+      {checked ? <CheckCircle2 className="h-5 w-5 fill-emerald-500 text-white" /> : <div className="h-2 w-2 rounded-full bg-slate-200 group-hover/check:bg-slate-300 transition-colors" />}
     </div>
+    <span className={cn("text-[9px] font-black tracking-widest", checked ? "text-emerald-600" : "text-slate-400")}>{label}</span>
+  </div>
 )
 
-
-// --- New Helper Components ---
-
-const VerificationSwitch: React.FC<{ 
-  label: string, 
-  icon: React.ReactNode, 
-  checked: boolean, 
-  onToggle: () => void, 
-  disabled: boolean 
-}> = ({ label, icon, checked, onToggle, disabled }) => (
-  <div className="flex flex-col items-center gap-1 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 min-w-[70px]">
-    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
-       {icon} {label}
-    </span>
-    <Switch 
-      checked={checked} 
-      onCheckedChange={onToggle}
-      disabled={disabled}
-      className="scale-75 data-[state=checked]:bg-emerald-500"
-    />
-    {checked ? (
-      <span className="text-[8px] text-emerald-600 font-black uppercase">Ok</span>
-    ) : (
-      <span className="text-[8px] text-rose-400 font-black uppercase">Wait</span>
-    )}
+const InfoCard: React.FC<{ icon: React.ReactNode, title: string, description: string }> = ({ icon, title, description }) => (
+  <div className="bg-white dark:bg-slate-900 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex items-start gap-4">
+    <div className="h-10 w-10 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0">
+      {icon}
+    </div>
+    <div>
+      <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1">{title}</h4>
+      <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
+    </div>
   </div>
 )
 
@@ -654,68 +532,43 @@ const EditYearDialog: React.FC<{
     payment_plan: item.payment_plan || ""
   });
 
-  const handleSave = () => {
-    onUpdate(formData);
-  };
-
   return (
-    <Dialog shadow-2xl>
+    <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-4 w-4 rounded-full text-blue-500 hover:text-blue-700">
-           <Edit className="h-3 w-3" />
-        </Button>
+        <div className="flex items-center px-2 py-1.5 text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+            <Edit3 className="h-4 w-4 mr-2" /> Modify Financials
+        </div>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] bg-white border-2 border-blue-100 shadow-2xl rounded-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-blue-900">
-            <ClipboardList className="h-5 w-5" />
-            Edit Enrollment Details
+      <DialogContent className="sm:max-w-[425px] rounded-[1.5rem] overflow-hidden p-0 border-none shadow-2xl">
+        <div className="bg-indigo-600 p-6 text-white">
+          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-indigo-200" /> Financial Adjustment
           </DialogTitle>
-          <DialogDescription>
-            Update the financial and scholarship data for {item.academic_year_name}.
+          <DialogDescription className="text-indigo-100/70 mt-1">
+            Updating record for {item.academic_year_name}
           </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right text-xs">Base Fee</Label>
-            <Input 
-              type="number"
-              className="col-span-3 h-8 text-sm" 
-              value={formData.total_fee} 
-              onChange={(e) => setFormData({...formData, total_fee: Number(e.target.value)}) }
-            />
+        </div>
+        <div className="p-8 space-y-5 bg-white dark:bg-slate-900">
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black uppercase text-slate-400">Standard Base Fee</Label>
+            <Input type="number" className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.total_fee} onChange={(e) => setFormData({...formData, total_fee: Number(e.target.value)}) } />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right text-xs">Benefit Amt</Label>
-            <Input 
-              type="number"
-              className="col-span-3 h-8 text-sm" 
-              value={formData.scholarship_amount} 
-              onChange={(e) => setFormData({...formData, scholarship_amount: Number(e.target.value)}) }
-            />
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black uppercase text-slate-400">Scholarship Benefit</Label>
+            <Input type="number" className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.scholarship_amount} onChange={(e) => setFormData({...formData, scholarship_amount: Number(e.target.value)}) } />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right text-xs font-bold text-emerald-600">Payable</Label>
-            <Input 
-              type="number"
-              className="col-span-3 h-8 text-sm font-bold" 
-              value={formData.net_payable_fee} 
-              onChange={(e) => setFormData({...formData, net_payable_fee: Number(e.target.value)}) }
-            />
+          <div className="space-y-2 p-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900">
+            <Label className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">Net Payable Amount</Label>
+            <Input type="number" className="bg-transparent border-none text-xl font-black text-indigo-700 dark:text-indigo-300 p-0 focus-visible:ring-0 h-auto" value={formData.net_payable_fee} onChange={(e) => setFormData({...formData, net_payable_fee: Number(e.target.value)}) } />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right text-xs">Plan</Label>
-            <Input 
-              className="col-span-3 h-8 text-sm" 
-              value={formData.payment_plan} 
-              onChange={(e) => setFormData({...formData, payment_plan: e.target.value}) }
-              placeholder="Full, Installment..."
-            />
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black uppercase text-slate-400">Payment Structure</Label>
+            <Input className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.payment_plan} onChange={(e) => setFormData({...formData, payment_plan: e.target.value}) } placeholder="Full Payment / Installments" />
           </div>
         </div>
-        <DialogFooter>
-          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 w-full rounded-xl">
-             <Save className="h-4 w-4 mr-2" /> Update Record
+        <DialogFooter className="p-6 pt-0 bg-white dark:bg-slate-900">
+          <Button onClick={() => onUpdate(formData)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 font-bold shadow-lg shadow-indigo-600/20">
+             <Save className="h-4 w-4 mr-2" /> Commit Changes
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -725,7 +578,11 @@ const EditYearDialog: React.FC<{
 
 export default function StudentStatusHistoryPage() {
     return (
-        <Suspense fallback={<StudentDetailLoading />}>
+        <Suspense fallback={
+            <div className="h-screen flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+            </div>
+        }>
             <StudentStatusHistoryContent />
         </Suspense>
     )

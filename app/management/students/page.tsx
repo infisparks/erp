@@ -625,9 +625,9 @@ export default function StudentManagementPage() {
                   Admission Verification Pending
                 </Badge>
               )}
-              {!student.is_enrollment_verified && (
-                <Badge variant="secondary" className="h-[18px] text-[9px] uppercase font-black bg-amber-500 hover:bg-amber-600 text-white border-none w-fit">
-                  Enrollment Verification Pending
+              {!student.is_enrollment_verified && student.active_semester_id && (
+                <Badge variant="secondary" className="h-[18px] text-[9px] uppercase font-black bg-orange-100 text-orange-700 border-orange-200 w-fit">
+                  Semester Verification Pending
                 </Badge>
               )}
               {student.is_admission_verified && student.is_enrollment_verified && (

@@ -14,10 +14,11 @@ import {
   ArrowRight, ShieldCheck, CreditCard, ChevronRight,
   Info, AlertTriangle, ArrowLeft, RefreshCw, Trophy,
   FileText, Clock, GraduationCap, ArrowUpRight, Check,
-  Zap, Trash2
+  Zap, Trash2, ShieldAlert
 } from "lucide-react"
-import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 
 /* --- Types --- */
 type Semester = {
@@ -60,6 +61,7 @@ export default function RegistrationPage() {
   const [selectedSem, setSelectedSem] = useState<Semester | null>(null)
   const [regStep, setRegStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [eligibilityStatus, setEligibilityStatus] = useState<'Eligible' | 'Drop' | 'Hold' | 'New'>('Eligible')
   
   // Registration Payload State
   const [scholarshipId, setScholarshipId] = useState("")
@@ -88,6 +90,15 @@ export default function RegistrationPage() {
         ])
         setCourseData(progress)
         setMetadata(meta)
+
+        // Eligibility Check
+        if (progress && progress.enrollments.length > 0) {
+           // Sort by ID or created_at to get latest
+           const latest = [...progress.enrollments].sort((a,b) => b.id - a.id)[0]
+           setEligibilityStatus(latest.promotion_status)
+        } else {
+           setEligibilityStatus('Eligible') // New student
+        }
       }
     } catch (err) {
       console.error("Init Error:", err)
@@ -102,7 +113,7 @@ export default function RegistrationPage() {
       const fetchFees = async () => {
         const res = await calculateStudentFees(supabase, {
           courseId: student.course_id,
-          academicYearId: student.admission_year_id || selectedSem.academic_year_id, // Use admission batch ID if available
+          academicYearId: student.admission_year_id || selectedSem.academic_year_id,
           scholarshipCategoryId: scholarshipId || undefined
         })
         setFeeCalc(res)
@@ -115,8 +126,49 @@ export default function RegistrationPage() {
     if (!selectedSem || !student) return
     setIsSubmitting(true)
     try {
+      // 1. Ensure a parent student_academic_years record exists
+      // Find the year object from metadata
+      const yearMeta = metadata?.academicYears.find(y => y.id === selectedSem.academic_year_id)
+      const academicYearSession = yearMeta?.name || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`
+      
+      let academicYearId: number | null = null
+      
+      // Try to find existing year record
+      const { data: existingYear } = await supabase
+        .from('student_academic_years')
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('academic_year_name', yearMeta?.name)
+        .maybeSingle()
+        
+      if (existingYear) {
+        academicYearId = existingYear.id
+      } else {
+        // Create new academic year record
+        const { data: newYear, error: yearError } = await supabase
+          .from('student_academic_years')
+          .insert({
+            student_id: student.id,
+            course_id: student.course_id,
+            academic_year_name: yearMeta?.name,
+            academic_year_session: academicYearSession,
+            status: 'Active',
+            total_fee: feeCalc?.totalFee || 0,
+            scholarship_amount: feeCalc?.scholarshipAmt || 0,
+            net_payable_fee: feeCalc?.netPayable || 0,
+            payment_plan: paymentPlan
+          })
+          .select('id')
+          .single()
+          
+        if (yearError) throw yearError
+        academicYearId = newYear.id
+      }
+
+      // 2. Insert Semester Registration
       const payload = {
         student_id: student.id,
+        student_academic_year_id: academicYearId,
         semester_id: selectedSem.id,
         total_fee: feeCalc?.totalFee,
         scholarship_amount: feeCalc?.scholarshipAmt,
@@ -131,11 +183,9 @@ export default function RegistrationPage() {
         }
       }
 
-      // 1. Insert search enrollment record
       const { error: enrollError } = await supabase.from('student_semesters').insert(payload)
       if (enrollError) throw enrollError
 
-      // 2. Update Student's Current Semester ID
       const { error: studentUpdateError } = await supabase
         .from('students')
         .update({ current_sem_id: selectedSem.id })
@@ -145,8 +195,9 @@ export default function RegistrationPage() {
 
       setSelectedSem(null)
       init()
+      toast.success("Semester enrollment successful!")
     } catch (err: any) {
-      alert("Registration failed: " + err.message)
+      toast.error("Registration failed: " + err.message)
     } finally {
       setIsSubmitting(false)
     }
@@ -156,7 +207,7 @@ export default function RegistrationPage() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center">
         <div className="h-10 w-10 border-4 border-slate-200 border-t-[#1A3A6B] rounded-full animate-spin mb-4" />
-        <p className="text-[#1A3A6B] font-black text-[9px] uppercase tracking-[.3em]">Synching Academic Records</p>
+        <p className="text-[#1A3A6B] font-semibold text-[9px] uppercase tracking-[.3em]">Synching Academic Records</p>
       </div>
     )
   }
@@ -166,12 +217,11 @@ export default function RegistrationPage() {
   return (
     <div className="min-h-screen bg-[#F5F8FA] pb-24">
       
-      {/* ── Banner: High-Density & Professional ──────────────── */}
       <div className="bg-[#1A3A6B] text-white pt-8 pb-10 px-6 lg:px-12 relative overflow-hidden shadow-lg shadow-blue-900/10">
          <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-2xl -mr-16 -mt-16" />
          <div className="max-w-4xl mx-auto relative z-10 flex items-center justify-between gap-4">
             <div>
-               <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white">Semester Enrollment</h1>
+               <h1 className="text-xl md:text-2xl font-semibold tracking-tight uppercase text-white">Semester Enrollment</h1>
                <div className="flex flex-wrap items-center gap-2 mt-2">
                   <TinyBadge label={student?.courses?.name} icon={GraduationCap} />
                   <TinyBadge label={`Batch ${student?.admission_year}`} icon={Calendar} />
@@ -185,14 +235,13 @@ export default function RegistrationPage() {
 
       <div className="max-w-4xl mx-auto px-4 -mt-4 relative z-20">
         
-        {/* Verification Status - Clean Inline Alert */}
         {!isProfileVerified && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100 mb-6 flex items-start gap-4">
              <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center shrink-0">
                 <AlertTriangle className="text-orange-500" size={20} />
              </div>
              <div className="flex-1">
-                <p className="text-[#1A3A6B] font-black text-[10px] uppercase tracking-widest mb-1">Locked Access</p>
+                <p className="text-[#1A3A6B] font-semibold text-[10px] uppercase tracking-widest mb-1">Locked Access</p>
                 <p className="text-gray-400 text-[10px] font-medium italic">Departmental approval required for registration.</p>
                 <div className="flex gap-2 mt-3">
                    <MiniIndicator label="Admin" active={student?.is_verifiedby_admin} />
@@ -203,13 +252,38 @@ export default function RegistrationPage() {
           </div>
         )}
 
-        {/* Global Progression Timeline */}
         {isProfileVerified && courseData && (
           <div className="space-y-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[#1A2340] uppercase tracking-[0.2em]">Select Semester</h2>
+              <Badge variant="outline" className={cn(
+                "text-[8px] font-black uppercase tracking-tighter h-5",
+                eligibilityStatus === 'Eligible' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                eligibilityStatus === 'Hold' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                "bg-rose-50 text-rose-600 border-rose-100"
+              )}>
+                Status: {eligibilityStatus}
+              </Badge>
+            </div>
+
+            {eligibilityStatus !== 'Eligible' && (
+              <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 flex items-start gap-4 animate-in slide-in-from-top-4 duration-500">
+                <div className="h-10 w-10 rounded-2xl bg-white flex items-center justify-center shadow-sm">
+                   <ShieldAlert className="h-5 w-5 text-rose-500" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-rose-900 leading-none mb-2">Enrollment Restricted</h4>
+                  <p className="text-[10px] text-rose-600 font-medium leading-relaxed max-w-sm">
+                    Your current academic status is set to <span className="font-bold underline">{eligibilityStatus}</span>. 
+                    New semester registration is disabled. Please contact the administrative office or exam cell to resolve your promotion status.
+                  </p>
+                </div>
+              </div>
+            )}
              {courseData.years.map((year, yIdx) => (
                 <div key={year.id}>
                    <div className="flex items-center gap-3 mb-4 opacity-50">
-                      <p className="text-[9px] font-black text-[#1A3A6B] uppercase tracking-[0.2em]">{year.name}</p>
+                      <p className="text-[9px] font-semibold text-[#1A3A6B] uppercase tracking-[0.2em]">{year.name}</p>
                       <div className="h-px bg-[#1A3A6B] flex-1" />
                    </div>
 
@@ -218,7 +292,6 @@ export default function RegistrationPage() {
                          const enrollment = courseData.enrollments.find(e => e.semester_id === sem.id)
                          const isEnrolled = !!enrollment
                          
-                         // Enrollment Eligibility Constraint
                          let isLocked = false
                          if (sIdx > 0) {
                             const prev = year.semesters[sIdx-1]
@@ -259,17 +332,16 @@ export default function RegistrationPage() {
         )}
       </div>
 
-      {/* ── Desktop/Mobile Floating Enrollment Sheet ─────────── */}
       {selectedSem && (
         <div className="fixed inset-0 z-[100] bg-[#1A3A6B]/20 backdrop-blur-md flex items-end md:items-center justify-center p-4 animate-in fade-in duration-300">
            <div className="w-full max-w-lg bg-white rounded-t-[32px] md:rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-10 duration-500">
               
               <div className="bg-[#1A3A6B] p-6 text-white flex items-center justify-between">
                  <div>
-                    <h3 className="text-lg font-black tracking-tight text-white">{selectedSem.name} Enrollment</h3>
+                    <h3 className="text-lg font-semibold tracking-tight text-white">{selectedSem.name} Enrollment</h3>
                     <div className="flex items-center gap-2 mt-1">
                        <Zap size={10} className="text-[#B8860B]" />
-                       <p className="text-white/60 text-[8px] font-black uppercase tracking-widest leading-none">Digital Registration Phase</p>
+                       <p className="text-white/60 text-[8px] font-semibold uppercase tracking-widest leading-none">Digital Registration Phase</p>
                     </div>
                  </div>
                  <button onClick={() => setSelectedSem(null)} className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10 text-white">
@@ -277,7 +349,6 @@ export default function RegistrationPage() {
                  </button>
               </div>
 
-              {/* Steps (Tiny Icons) */}
               <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-center gap-10">
                  <IconStep icon={BookOpen} active={regStep === 0} done={regStep > 0} />
                  <IconStep icon={CreditCard} active={regStep === 1} done={regStep > 1} />
@@ -287,14 +358,14 @@ export default function RegistrationPage() {
               <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
                  {regStep === 0 && (
                    <div className="animate-in fade-in slide-in-from-right-4">
-                      <p className="text-[#1A3A6B] font-black text-[9px] uppercase tracking-widest mb-4">Curriculum Mapping</p>
+                      <p className="text-[#1A3A6B] font-semibold text-[9px] uppercase tracking-widest mb-4">Curriculum Mapping</p>
                       <div className="space-y-2">
                         {selectedSem.subjects.map((sub: any) => (
                           <div key={sub.id} className="flex items-center gap-3 p-2.5 bg-slate-50/50 rounded-xl border border-slate-100">
                              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-slate-300 shadow-sm"><FileText size={14}/></div>
                              <div className="flex-1 min-w-0">
-                                <p className="text-[#1A3A6B] font-bold text-[10px] truncate">{sub.name}</p>
-                                <p className="text-gray-400 text-[8px] font-bold uppercase tracking-widest mt-0.5">{sub.subject_code} · {sub.type}</p>
+                                <p className="text-[#1A3A6B] font-medium text-[10px] truncate">{sub.name}</p>
+                                <p className="text-gray-400 text-[8px] font-medium uppercase tracking-widest mt-0.5">{sub.subject_code} · {sub.type}</p>
                              </div>
                           </div>
                         ))}
@@ -304,21 +375,21 @@ export default function RegistrationPage() {
 
                  {regStep === 1 && (
                    <div className="animate-in fade-in slide-in-from-right-4">
-                      <p className="text-[#1A3A6B] font-black text-[9px] uppercase tracking-widest mb-4">Financial Support</p>
+                      <p className="text-[#1A3A6B] font-semibold text-[9px] uppercase tracking-widest mb-4">Financial Support</p>
                       <div className="space-y-6">
                          <select 
                             value={scholarshipId}
                             onChange={(e) => setScholarshipId(e.target.value)}
-                            className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[10px] font-bold text-[#1A3A6B] outline-none"
+                            className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[10px] font-medium text-[#1A3A6B] outline-none"
                          >
                             <option value="">No Scholarship Strategy</option>
                             {metadata?.scholarshipCategories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                          </select>
                          <div className="bg-[#1A3A6B] rounded-2xl p-6 text-white overflow-hidden relative shadow-xl shadow-blue-900/10">
                             <div className="absolute bottom-0 right-0 h-24 w-24 bg-white/5 rounded-full blur-xl -mb-10 -mr-10" />
-                            <p className="text-white/40 text-[8px] font-black uppercase tracking-[.2em] mb-2">Total Net Amount</p>
-                            <h4 className="text-3xl font-black italic text-white">₹{feeCalc?.netPayable?.toLocaleString()}</h4>
-                            <div className="mt-4 flex justify-between text-[9px] font-bold text-white/50 border-t border-white/10 pt-4">
+                            <p className="text-white/40 text-[8px] font-semibold uppercase tracking-[.2em] mb-2">Total Net Amount</p>
+                            <h4 className="text-3xl font-semibold italic text-white">₹{feeCalc?.netPayable?.toLocaleString()}</h4>
+                            <div className="mt-4 flex justify-between text-[9px] font-medium text-white/50 border-t border-white/10 pt-4">
                                <span className="text-white/60">TOTAL FEES: ₹{feeCalc?.totalFee?.toLocaleString()}</span>
                                <span className="text-green-400">SCHOLARSHIP DISCOUNT: ₹{feeCalc?.scholarshipAmt?.toLocaleString()}</span>
                             </div>
@@ -329,7 +400,7 @@ export default function RegistrationPage() {
 
                  {regStep === 2 && (
                    <div className="animate-in fade-in slide-in-from-right-4">
-                      <p className="text-[#1A3A6B] font-black text-[9px] uppercase tracking-widest mb-4">Payment Schedule</p>
+                      <p className="text-[#1A3A6B] font-semibold text-[9px] uppercase tracking-widest mb-4">Payment Schedule</p>
                       <div className="flex gap-2">
                          <TinyActionCard active={paymentPlan === "One Time"} onClick={() => setPaymentPlan("One Time")} label="Full Advance" icon={CheckCircle2} />
                          <TinyActionCard active={paymentPlan === "Installments"} onClick={() => setPaymentPlan("Installments")} label="Split Ledger" icon={Clock} />
@@ -337,7 +408,7 @@ export default function RegistrationPage() {
                       {paymentPlan === "Installments" && (
                          <div className="mt-4 space-y-4 animate-in slide-in-from-top-2">
                             <div className="space-y-2">
-                               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Proposed Payment Dates</p>
+                               <p className="text-[8px] font-medium text-slate-400 uppercase tracking-widest px-1">Proposed Payment Dates</p>
                                {installmentDates.map((date, idx) => (
                                   <div key={idx} className="flex gap-2">
                                      <input 
@@ -348,7 +419,7 @@ export default function RegistrationPage() {
                                            newDates[idx] = e.target.value
                                            setInstallmentDates(newDates)
                                         }}
-                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-[#1A3A6B] outline-none"
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-medium text-[#1A3A6B] outline-none"
                                      />
                                      {idx > 0 && (
                                         <button 
@@ -362,10 +433,10 @@ export default function RegistrationPage() {
                                ))}
                                <button 
                                   onClick={() => setInstallmentDates([...installmentDates, ""])}
-                                  className="w-full h-9 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-[8px] font-black text-slate-400 uppercase tracking-widest hover:bg-slate-100 transition-colors"
+                                  className="w-full h-9 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-[8px] font-semibold text-slate-400 uppercase tracking-widest hover:bg-slate-100 transition-colors"
                                >
                                   + Add Installment Date
-                               </button>
+                                </button>
                             </div>
 
                             <textarea 
@@ -381,17 +452,18 @@ export default function RegistrationPage() {
                  )}
               </div>
 
-              {/* Action */}
               <div className="p-6 bg-white border-t border-slate-50 flex gap-2">
                  {regStep > 0 && (
-                    <button onClick={() => setRegStep(s => s - 1)} className="h-11 px-6 bg-slate-50 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-400">Back</button>
+                    <button onClick={() => setRegStep(s => s - 1)} className="h-11 px-6 bg-slate-50 rounded-xl text-[9px] font-semibold uppercase tracking-widest text-slate-400">Back</button>
                  )}
                  <button 
                     onClick={() => regStep < 2 ? setRegStep(s => s + 1) : handleEnroll()}
-                    disabled={isSubmitting}
-                    className="flex-1 h-11 bg-[#1A3A6B] hover:bg-[#2E75C7] rounded-xl text-white text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                    disabled={isSubmitting || eligibilityStatus !== 'Eligible'}
+                    className="flex-1 h-11 bg-[#1A3A6B] hover:bg-[#2E75C7] rounded-xl text-white text-[9px] font-semibold uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                  >
-                    {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : regStep === 2 ? "Finalize Enrollment" : "Proceed"}
+                    {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : 
+                     eligibilityStatus !== 'Eligible' ? "Status Restricted" :
+                     regStep === 2 ? "Finalize Enrollment" : "Proceed"}
                     {!isSubmitting && <ChevronRight size={14}/>}
                  </button>
               </div>
@@ -408,7 +480,7 @@ function TinyBadge({ label, icon: Icon }: any) {
   return (
     <div className="px-2 py-1 bg-white/10 rounded-md border border-white/20 flex items-center gap-1.5 backdrop-blur-md">
       <Icon size={10} className="text-white" />
-      <span className="text-[10px] font-bold tracking-tight text-white">{label}</span>
+      <span className="text-[10px] font-semibold tracking-tight text-white">{label}</span>
     </div>
   )
 }
@@ -416,7 +488,7 @@ function TinyBadge({ label, icon: Icon }: any) {
 function MiniIndicator({ label, active }: { label: string, active: boolean }) {
   return (
     <div className={cn(
-      "px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider border transition-all",
+      "px-1.5 py-0.5 rounded text-[7px] font-semibold uppercase tracking-wider border transition-all",
       active ? "bg-green-50 text-green-600 border-green-100" : "bg-gray-50 text-gray-300 border-gray-100"
     )}>
        {label}
@@ -444,11 +516,11 @@ function CompactEnrollmentCard({ sem, enrollment, isLocked, onSelect }: any) {
              {isLocked ? <Lock size={12}/> : isEnrolled ? <CheckCircle2 size={12}/> : <BookOpen size={12}/>}
           </div>
           {isEnrolled && (
-             <span className="text-[7px] font-black text-green-600 px-1.5 py-0.5 bg-green-50/50 rounded border border-green-100/30">ENROLLED</span>
+             <span className="text-[7px] font-semibold text-green-600 px-1.5 py-0.5 bg-green-50/50 rounded border border-green-100/30">ENROLLED</span>
           )}
        </div>
-       <h4 className="text-[11px] font-black text-[#1A3A6B] uppercase tracking-tighter truncate">{sem.name}</h4>
-       <p className="text-gray-400 text-[8px] font-bold uppercase mt-0.5">{sem.subjects.length} Units Curriculum</p>
+       <h4 className="text-[11px] font-semibold text-[#1A3A6B] uppercase tracking-tighter truncate">{sem.name}</h4>
+       <p className="text-gray-400 text-[8px] font-medium uppercase mt-0.5">{sem.subjects.length} Units Curriculum</p>
 
        {isEnrolled && (
           <div className="mt-4 pt-2 border-t border-slate-50 flex gap-1.5">
@@ -459,7 +531,7 @@ function CompactEnrollmentCard({ sem, enrollment, isLocked, onSelect }: any) {
        )}
 
        {!isEnrolled && !isLocked && (
-          <div className="mt-4 flex items-center gap-1 text-[#2E75C7] text-[8px] font-black uppercase tracking-widest">
+          <div className="mt-4 flex items-center gap-1 text-[#2E75C7] text-[8px] font-semibold uppercase tracking-widest">
              <span>Register</span>
              <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform"/>
           </div>
@@ -495,7 +567,7 @@ function TinyActionCard({ active, onClick, label, icon: Icon }: any) {
        )}
     >
        <Icon size={16} />
-       <span className="text-[8px] font-black uppercase tracking-widest">{label}</span>
+       <span className="text-[8px] font-semibold uppercase tracking-widest">{label}</span>
     </div>
   )
 }

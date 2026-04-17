@@ -505,33 +505,33 @@ function StudentDetailContent() {
                     .single()
                 if (studentError) throw new Error(`Failed to fetch student: ${studentError.message}`);
 
-                // 3. Fetch Active Academic Year
-                const { data: activeAY, error: ayError } = await supabase
+                // 3. Fetch Latest Academic Year (not just active)
+                const { data: latestAY, error: ayError } = await supabase
                     .from("student_academic_years")
                     .select("*")
                     .eq("student_id", studentId)
-                    .eq("status", "Active") // Find the active year
-                    .single();
-                
-                if (ayError || !activeAY) throw new Error("Could not find an active academic year for this student.");
-
-                // 4. Fetch Active Semester
-                const { data: activeSem, error: semError } = await supabase
-                    .from("student_semesters")
-                    .select("*")
-                    .eq("student_id", studentId)
-                    .eq("student_academic_year_id", activeAY.id) // Match the active year
-                    .eq("status", "active") // Find the active semester
                     .order('created_at', { ascending: false })
                     .limit(1)
-                    .single();
-
-                if (semError || !activeSem) throw new Error("Could not find an active semester for this student's active year.");
+                    .maybeSingle();
+                
+                // 4. Fetch Latest Semester
+                let latestSem = null;
+                if (latestAY) {
+                    const { data: semData } = await supabase
+                        .from("student_semesters")
+                        .select("*")
+                        .eq("student_id", studentId)
+                        .eq("student_academic_year_id", latestAY.id)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                    latestSem = semData;
+                }
 
                 // --- Find matching Academic Year UUID ---
                 const matchingAcademicYear = fetchedAcademicYears.find(
-                    ay => ay.course_id === activeAY.course_id &&
-                          ay.name === activeAY.academic_year_name
+                    ay => ay.course_id === latestAY?.course_id &&
+                          ay.name === latestAY?.academic_year_name
                 );
                 
                 const academicYearUUID = matchingAcademicYear?.id || null;
@@ -539,23 +539,21 @@ function StudentDetailContent() {
                 // 5. Merge and Set State
                 const mergedData = {
                     ...studentD,
-                    ...activeSem, // Contains semester_id, status, promotion_status
-                    id: studentD.id, // Ensure student ID is primary
-                    enrollment_id: activeSem.id, // This is the active enrollment
+                    ...(latestSem || {}), 
+                    id: studentD.id,
+                    enrollment_id: latestSem?.id || null, 
                     "rollNumber": studentD.roll_number,
                     
-                    // This is the 'academic_years.id' (UUID) for the dropdown
-                    student_academic_year_id: academicYearUUID, 
+                    student_academic_year_id: academicYearUUID, 
                     
-                    // This data is just for reference/display
-                    academic_year_data: {
-                        id: activeAY.id.toString(), // The 'student_academic_years.id' (bigint)
-                        name: activeAY.academic_year_name,
-                        course_id: activeAY.course_id, // The course_id (uuid)
-                        session: activeAY.academic_year_session,
-                        total_fee: activeAY.total_fee,
-                        net_payable_fee: activeAY.net_payable_fee,
-                    },
+                    academic_year_data: latestAY ? {
+                        id: latestAY.id.toString(),
+                        name: latestAY.academic_year_name,
+                        course_id: latestAY.course_id,
+                        session: latestAY.academic_year_session,
+                        total_fee: latestAY.total_fee,
+                        net_payable_fee: latestAY.net_payable_fee,
+                    } : null,
                 } as StudentDetail;
 
                 setStudentData(mergedData)
@@ -732,7 +730,6 @@ function StudentDetailContent() {
 
             // 2. Data Splitting
             const studentUpdateData = {
-                // All fields from 'students' table
                 firstname: editFormData.firstname,
                 lastname: editFormData.lastname,
                 email: editFormData.email,
@@ -747,9 +744,6 @@ function StudentDetailContent() {
                 secondary_phone: editFormData.secondary_phone,
                 family_phone: editFormData.family_phone,
                 middlename: editFormData.middlename,
-                admission_year: editFormData.admission_year,
-                admission_category: editFormData.admission_category,
-                admission_type: editFormData.admission_type,
                 father_name: editFormData.father_name,
                 mother_name: editFormData.mother_name,
                 father_occupation: editFormData.father_occupation,
@@ -764,31 +758,48 @@ function StudentDetailContent() {
                 religion: editFormData.religion,
                 caste: editFormData.caste,
                 blood_group: editFormData.blood_group,
-                category_type: editFormData.category_type,
                 aadhar_card_number: editFormData.aadhar_card_number,
                 pan_no: editFormData.pan_no,
                 student_mobile_no: editFormData.student_mobile_no,
                 father_mobile_no: editFormData.father_mobile_no,
                 mother_mobile_no: editFormData.mother_mobile_no,
-                photo_path: editFormData.photo_path,
+                form_no: editFormData.form_no,
+                registration_no: editFormData.registration_no,
+                merit_no: editFormData.merit_no,
+                admission_year: editFormData.admission_year,
+                admission_type: editFormData.admission_type,
+                admission_category: editFormData.admission_category,
+                category_type: editFormData.category_type,
                 quota_selection: editFormData.quota_selection,
                 discipline: editFormData.discipline,
                 branch_preferences: editFormData.branch_preferences,
                 how_did_you_know: editFormData.how_did_you_know,
-                form_no: editFormData.form_no,
-                registration_no: editFormData.registration_no,
-                merit_no: editFormData.merit_no,
                 roll_number: editFormData["rollNumber"],
             };
             
             // Only 'status' is editable for the semester
             const semesterUpdateData = {
                 status: editFormData.status,
-                // Pass back the other fields as they were (since they are disabled)
-                promotion_status: editFormData.promotion_status, 
+                promotion_status: editFormData.promotion_status, 
                 semester_id: editFormData.semester_id,
-                student_academic_year_id: currentStudentAcademicYearId, 
+                student_academic_year_id: editFormData.student_academic_year_id, 
             };
+
+            // 2.5 Update Academic Year Details if they changed
+            if (currentStudentAcademicYearId) {
+                const ayUpdateData = {
+                    academic_year_session: editFormData.session,
+                    academic_year_name: allAcademicYears.find(ay => ay.id === editFormData.student_academic_year_id)?.name,
+                    course_id: editFormData.academic_year_data?.course_id
+                };
+
+                const { error: ayError } = await supabase
+                    .from("student_academic_years")
+                    .update(ayUpdateData)
+                    .eq("id", currentStudentAcademicYearId);
+
+                if (ayError) throw new Error(`Academic year update failed: ${ayError.message}`);
+            }
 
             // 3. Database Transactions
             const { error: studentUpdateError } = await supabase
@@ -798,28 +809,28 @@ function StudentDetailContent() {
 
             if (studentUpdateError) throw new Error(`Student update failed: ${studentUpdateError.message}`);
 
-            // No need to update student_academic_years, as it's all disabled
-            
-            const { error: semesterUpdateError } = await supabase
-                .from("student_semesters")
-                .update(semesterUpdateData)
-                .eq("id", currentEnrollmentId); // Update the specific active semester
+            if (currentEnrollmentId) {
+                const { error: semesterUpdateError } = await supabase
+                    .from("student_semesters")
+                    .update(semesterUpdateData)
+                    .eq("id", currentEnrollmentId);
 
-            if (semesterUpdateError) throw new Error(`Enrollment update failed: ${semesterUpdateError.message}`);
+                if (semesterUpdateError) throw new Error(`Enrollment update failed: ${semesterUpdateError.message}`);
+            }
 
             // 4. Update UI
             const updatedStudentData = {
-                ...studentData, // Start with the original loaded data
-                ...studentUpdateData, // Overlay student table changes
-                ...semesterUpdateData, // Overlay semester table changes
+                ...studentData, 
+                ...studentUpdateData, 
+                ...semesterUpdateData, 
             } as StudentDetail;
 
 
             setFilesToAdd([])
             setFilesToRemove([])
             setNewDocFile(null)
-            setStudentData(updatedStudentData) // Update view state
-            setMode('view') // Switch back to view mode
+            setStudentData(updatedStudentData) 
+            setMode('view') 
 
         } catch (err: any) {
             console.error("Error updating student:", err)
@@ -1141,22 +1152,28 @@ function StudentDetailContent() {
                         <AccordionItem value="item-7">
                             <AccordionTrigger className="text-lg font-semibold">Uploaded Documents</AccordionTrigger>
                             <AccordionContent className="pt-4 space-y-2">
-                                {student.documents.map((doc) => (
-                                    <button
-                                        key={doc.path}
-                                        onClick={() => handleViewDocument(doc)}
-                                        className="flex w-full items-center justify-between p-3 bg-secondary rounded-md border hover:bg-muted group text-left"
-                                    >
-                                        <div className="flex items-center gap-3 overflow-hidden">
-                                            <File className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                                            <div className="overflow-hidden">
-                                                <p className="text-sm font-medium group-hover:underline truncate">{doc.name}</p>
-                                                <p className="text-xs text-muted-foreground truncate">{doc.fileName}</p>
+                                {student.documents.map((doc: any, index: number) => {
+                                    const docName = typeof doc === 'string' ? doc : (doc.name || doc.type || doc.fileName || "Document");
+                                    const subLabel = typeof doc === 'object' && doc !== null ? (doc.fileName || (doc.path ? doc.path.split('/').pop() : "")) : "";
+                                    const isViewable = typeof doc === 'object' && doc !== null && doc.path;
+
+                                    return (
+                                        <button
+                                            key={typeof doc === 'object' && doc !== null ? (doc.path || index) : index}
+                                            onClick={() => isViewable ? handleViewDocument(doc) : null}
+                                            className="flex w-full items-center justify-between p-3 bg-secondary rounded-md border hover:bg-muted group text-left"
+                                        >
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <File className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                                                <div className="overflow-hidden">
+                                                    <p className="text-sm font-medium group-hover:underline truncate">{docName}</p>
+                                                    {subLabel && <p className="text-[10px] text-muted-foreground truncate">{subLabel}</p>}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <Eye className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
-                                    </button>
-                                ))}
+                                            {isViewable && <Eye className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0 ml-2" />}
+                                        </button>
+                                    );
+                                })}
                             </AccordionContent>
                         </AccordionItem>
                     )}
@@ -1203,6 +1220,27 @@ function StudentDetailContent() {
                     </Card>
 
                     <Card>
+                        <CardHeader><CardTitle>Identity & Background</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormInputGroup label="Blood Group" name="blood_group" value={editFormData.blood_group || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Nationality" name="nationality" value={editFormData.nationality || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Place of Birth" name="place_of_birth" value={editFormData.place_of_birth || ""} onChange={handleEditChange} />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Religion" name="religion" value={editFormData.religion || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Caste" name="caste" value={editFormData.caste || ""} onChange={handleEditChange} />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormSelectGroup label="Domicile" name="domicile_of_maharashtra" value={editFormData.domicile_of_maharashtra} onValueChange={(val) => handleEditSelectChange("domicile_of_maharashtra", val)} options={yesNoOptions} placeholder="Domicile?" />
+                                <FormSelectGroup label="Handicap" name="phd_handicap" value={editFormData.phd_handicap} onValueChange={(val) => handleEditSelectChange("phd_handicap", val)} options={yesNoOptions} placeholder="Handicap?" />
+                                <FormInputGroup label="Aadhar Number" name="aadhar_card_number" value={editFormData.aadhar_card_number || ""} onChange={handleEditChange} />
+                            </div>
+                            <FormInputGroup label="PAN Card Number" name="pan_no" value={editFormData.pan_no || ""} onChange={handleEditChange} />
+                        </CardContent>
+                    </Card>
+
+                    <Card>
                         <CardHeader><CardTitle>Parent / Guardian Details</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1227,64 +1265,63 @@ function StudentDetailContent() {
                     <Card>
                         <CardHeader>
                             <CardTitle>Enrollment Details</CardTitle>
-                            <CardDescription>
-                                Only the 'Enrollment Status' is editable. Other fields are locked to this active enrollment.
-                            </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormSearchableSelectGroup
                                     label="Course"
                                     value={editFormData.academic_year_data?.course_id ?? null}
-                                    onChange={(val) => handleEditSearchableSelectChange("course_id", val)}
+                                    onChange={(val) => setEditFormData(prev => ({ 
+                                        ...prev, 
+                                        academic_year_data: { ...(prev.academic_year_data as any), course_id: val } 
+                                    }))}
                                     options={allCourseOptions}
                                     placeholder="Select course"
                                     required
-                                    disabled={true} 
                                 />
                                 <FormSearchableSelectGroup
                                     label="Academic Year"
                                     value={editFormData.student_academic_year_id ?? null}
-                                    onChange={(val) => handleEditSearchableSelectChange("student_academic_year_id", val)}
+                                    onChange={(val) => setEditFormData(prev => ({ 
+                                        ...prev, 
+                                        student_academic_year_id: val 
+                                    }))}
                                     options={editModalAcademicYearOptions}
                                     placeholder="Select academic year"
-                                    disabled={true}
                                     required
                                 />
                                 <FormSearchableSelectGroup
                                     label="Semester"
                                     value={editFormData.semester_id ?? null}
-                                    onChange={(val) => handleEditSearchableSelectChange("semester_id", val)}
+                                    onChange={(val) => handleEditSelectChange("semester_id", val || "")}
                                     options={editModalSemesterOptions}
                                     placeholder="Select semester"
-                                    disabled={true}
                                     required
                                 />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormSelectGroup 
-                                    label="Enrollment Status" 
-                                    name="status" 
-                                    value={editFormData.status} 
-                                    onValueChange={(val: string) => handleEditSelectChange("status", val)} 
-                                    options={statusOptions} 
-                                    placeholder="Select status" 
-                                    required 
+                                <FormSelectGroup 
+                                    label="Enrollment Status" 
+                                    name="status" 
+                                    value={editFormData.status} 
+                                    onValueChange={(val: string) => handleEditSelectChange("status", val)} 
+                                    options={statusOptions} 
+                                    placeholder="Select status" 
+                                    required 
                                 />
-                                <FormSelectGroup 
-                                    label="Promotion Status" 
-                                    name="promotion_status" 
-                                    value={editFormData.promotion_status} 
-                                    onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} 
-                                    options={promotionStatusOptions} 
-                                    placeholder="Select status" 
-                                    required 
-                                    disabled={true} 
+                                <FormSelectGroup 
+                                    label="Promotion Status" 
+                                    name="promotion_status" 
+                                    value={editFormData.promotion_status} 
+                                    onValueChange={(val: string) => handleEditSelectChange("promotion_status", val)} 
+                                    options={promotionStatusOptions} 
+                                    placeholder="Select status" 
+                                    required 
                                 />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Admission Year (Session Start)" name="admission_year" value={editFormData.admission_year || ""} onChange={handleEditChange} />
-                                <FormInputGroup label="Academic Year Session" name="session" value={editFormData.academic_year_data?.session || ""} onChange={() => { }} disabled />
+                                <FormInputGroup label="Academic Year Session" name="session" value={editFormData.academic_year_data?.session || ""} onChange={(e) => setEditFormData(prev => ({ ...prev, academic_year_data: { ...(prev.academic_year_data as any), session: e.target.value } }))} />
                             </div>
                         </CardContent>
                     </Card>
@@ -1349,18 +1386,23 @@ function StudentDetailContent() {
                                     <p className="text-sm text-muted-foreground italic">No documents uploaded.</p>
                                 )}
 
-                                {(editFormData.documents || []).map((doc) => (
-                                    <div key={doc.path} className="flex items-center justify-between p-2 bg-secondary rounded-md border">
-                                        <div className="flex items-center gap-2 overflow-hidden">
-                                            <File className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                            <span className="text-sm font-medium truncate">{doc.name}</span>
-                                            <span className="text-xs text-muted-foreground truncate">({doc.fileName})</span>
+                                {(editFormData.documents || []).map((doc: any, index: number) => {
+                                    const docName = typeof doc === 'string' ? doc : (doc.name || doc.type || doc.fileName || "Document");
+                                    const subLabel = typeof doc === 'object' && doc !== null ? (doc.fileName || (doc.path ? doc.path.split('/').pop() : "")) : "";
+                                    
+                                    return (
+                                        <div key={typeof doc === 'object' && doc !== null ? (doc.path || index) : index} className="flex items-center justify-between p-2 bg-secondary rounded-md border">
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <File className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                <span className="text-sm font-medium truncate">{docName}</span>
+                                                {subLabel && <span className="text-xs text-muted-foreground truncate">({subLabel})</span>}
+                                            </div>
+                                            <Button type="button" variant="ghost" size="icon" onClick={() => stageFileForRemoval(doc)} title="Remove this document">
+                                                <Trash2 className="w-4 h-4 text-destructive" />
+                                            </Button>
                                         </div>
-                                        <Button type="button" variant="ghost" size="icon" onClick={() => stageFileForRemoval(doc)} title="Remove this document">
-                                            <Trash2 className="w-4 h-4 text-destructive" />
-                                        </Button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
 
                                 {filesToAdd.map((doc) => (
                                     <div key={doc.id} className="flex items-center justify-between p-2 bg-green-900/10 rounded-md border border-green-700/20">
@@ -1512,7 +1554,7 @@ function StudentDetailContent() {
                     <AlertTitle>Error Loading Data</AlertTitle>
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
-                <Button onClick={() => router.push('/student')}>
+                <Button onClick={() => router.push('/management/students')}>
                     Go Back to List
                 </Button>
             </div>
@@ -1561,7 +1603,7 @@ function StudentDetailContent() {
                     {student_status_badges}
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => router.push('/student')}>
+                    <Button variant="outline" onClick={() => router.push('/management/students')}>
                         <ChevronLeft className="h-4 w-4 mr-2" />
                         Back to List
                     </Button>
