@@ -29,7 +29,7 @@ const AppColors = {
 /* ─── Static data ───────────────────────────────── */
 const quickActions = [
   { Icon: User,         label: "Profile",    color: "#1A3A6B", bg: "#E8F0FB", href: "/student/edit-admission" },
-  { Icon: FileText,     label: "Yearly Registration", color: "#1A3A6B", bg: "#E8F0FB", href: "/student/registration" },
+  { Icon: FileText,     label: "Registration", color: "#1A3A6B", bg: "#E8F0FB", href: "/student/registration" },
   { Icon: CalendarCheck,label: "Attendance", color: "#B8860B", bg: "#FFF6E5", href: "/student/attendance" },
   { Icon: BookOpen,     label: "Library",    color: "#2D6A3F", bg: "#E7F4ED", href: "/student/library" },
   { Icon: CreditCard,   label: "Fees",       color: "#B53030", bg: "#FFECEC", href: "/student/fees" },
@@ -255,7 +255,7 @@ export default function StudentDashboard() {
                                        </div>
                                     )}
                                  </div>
-                                 <p className="text-[11px] font-medium uppercase text-[#1A2340] tracking-wider group-hover:text-[#2E75C7] transition-colors">{action.label}</p>
+                                 <p className="text-[9px] font-bold uppercase text-[#1A2340] tracking-tight group-hover:text-[#2E75C7] transition-colors text-center">{action.label}</p>
                               </div>
                            </Link>
                         )
