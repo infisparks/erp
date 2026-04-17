@@ -183,7 +183,7 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
         try {
             const student = await getStudentProfile(supabase, user.id)
             if (student) {
-                setIsLocked(student.is_locked || student.is_verifiedby_admin)
+                setIsLocked(student.is_locked === true)
                 setFormData({
                     how_did_you_know: student.how_did_you_know || "",
                     scholarship_category_id: student.scholarship_category_id || "",

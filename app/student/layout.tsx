@@ -20,7 +20,7 @@ export default function StudentLayout({
   const supabase = getSupabaseClient()
 
   // Define which routes should show the navigation elements (Sidebar, BottomNav, etc.)
-  const hideNavOnRoutes = ["/student/login", "/student/admission"]
+  const hideNavOnRoutes = ["/student/login", "/student/admission", "/student/edit-admission"]
   const showNav = !hideNavOnRoutes.includes(pathname)
 
   useEffect(() => {

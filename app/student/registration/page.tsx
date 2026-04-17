@@ -176,6 +176,8 @@ export default function RegistrationPage() {
         net_payable_fee: feeCalc?.netPayable || 0,
         installment_dates: paymentPlan === "Installments" ? installmentDates.filter(d => d) : null,
         installment_letter: paymentPlan === "Installments" ? installmentLetter : null,
+        payment_plan: paymentPlan,
+        installment_undertaking_path: paymentPlan === "Installments" ? installmentLetter : null, // Mapping for now
         registration_data: { payment_plan: paymentPlan },
       }
 

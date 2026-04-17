@@ -602,13 +602,13 @@ export default function FeesManagementPage() {
                 <DropdownMenuSeparator />
                 {/* 3. Promotion Management */}
                 <DropdownMenuItem asChild>
-                  <Link
+                  {/* <Link
                     href={`/management/students/promotion?student_id=${student.student_id}`}
                     className="flex items-center"
                   >
                     <RotateCw className="mr-2 h-4 w-4" />
                     <span>Manage Promotion</span>
-                  </Link>
+                  </Link> */}
                 </DropdownMenuItem>
                 {/* 4. Status Management */}
                 <DropdownMenuItem asChild>

@@ -191,45 +191,45 @@ export default function StudentDashboard() {
                </div>
 
                {/* Verification Tracker Section */}
-               <div className="bg-white rounded-[32px] border border-slate-100 p-6 space-y-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                     <h5 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#1A3A6B]">
-                        Verification Progress
-                     </h5>
-                     <div className="flex items-center gap-2">
-                        <div className="h-1 w-1 bg-[#4ADE80] rounded-full" />
-                        <span className="text-[8px] font-medium text-slate-400 uppercase tracking-widest leading-none">Admin</span>
-                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 md:divide-x lg:divide-x-0 lg:divide-y divide-slate-100">
-                     <div className="pb-6 md:pb-0 md:pr-6 lg:pb-6 lg:pr-0">
-                        <VerificationItem 
-                           icon={CreditCard} 
-                           label="Accountant" 
-                           status={student?.is_verifiedby_accountant ? "Approved" : "Pending"} 
-                           isDone={student?.is_verifiedby_accountant} 
-                        />
-                     </div>
-                     <div className="pt-6 md:pt-0 md:pl-6 lg:pt-6 lg:pl-0">
-                        <VerificationItem 
-                           icon={ShieldCheck} 
-                           label="Exam Cell" 
-                           status={student?.is_verifiedby_examcell ? "Approved" : "Pending"} 
-                           isDone={student?.is_verifiedby_examcell} 
-                        />
-                     </div>
-                  </div>
+               {!isFullyVerified && (
+                  <div className="bg-white rounded-[32px] border border-slate-100 p-6 space-y-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                        <h5 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#1A3A6B]">
+                          Verification Progress
+                        </h5>
+                        <div className="flex items-center gap-2">
+                          <div className="h-1 w-1 bg-[#4ADE80] rounded-full" />
+                          <span className="text-[8px] font-medium text-slate-400 uppercase tracking-widest leading-none">Admin</span>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 md:divide-x lg:divide-x-0 lg:divide-y divide-slate-100">
+                        <div className="pb-6 md:pb-0 md:pr-6 lg:pb-6 lg:pr-0">
+                          <VerificationItem 
+                              icon={CreditCard} 
+                              label="Accountant" 
+                              status={student?.is_verifiedby_accountant ? "Approved" : "Pending"} 
+                              isDone={student?.is_verifiedby_accountant} 
+                          />
+                        </div>
+                        <div className="pt-6 md:pt-0 md:pl-6 lg:pt-6 lg:pl-0">
+                          <VerificationItem 
+                              icon={ShieldCheck} 
+                              label="Exam Cell" 
+                              status={student?.is_verifiedby_examcell ? "Approved" : "Pending"} 
+                              isDone={student?.is_verifiedby_examcell} 
+                          />
+                        </div>
+                    </div>
 
-                  {!isFullyVerified && (
-                     <div className="bg-[#1E293B] rounded-[24px] p-5 flex items-center gap-3">
+                    <div className="bg-[#1E293B] rounded-[24px] p-5 flex items-center gap-3">
                         <ShieldAlert size={18} className="text-amber-500 shrink-0" />
                         <p className="text-white text-[10px] font-medium leading-relaxed tracking-tight">
-                           Portal access is restricted until complete administrative synchronization.
+                          Portal access is restricted until complete administrative synchronization.
                         </p>
-                     </div>
-                  )}
-               </div>
+                    </div>
+                  </div>
+               )}
             </div>
 
             {/* ───── Right Column ───── */}

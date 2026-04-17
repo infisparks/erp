@@ -2,14 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, CreditCard, QrCode, Calendar, UserCircle } from "lucide-react"
+import { Home, CreditCard, QrCode, CheckCircle2, UserCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { icon: Home, label: "Home", href: "/student/dashboard" },
   { icon: CreditCard, label: "Fees", href: "/student/fees" },
   { icon: QrCode, label: "ID", href: "/student/identity", special: true },
-  { icon: Calendar, label: "Timetable", href: "/student/schedule" },
+  { icon: CheckCircle2, label: "Registration", href: "/student/registration" },
   { icon: UserCircle, label: "Profile", href: "/student/profile" },
 ]
 

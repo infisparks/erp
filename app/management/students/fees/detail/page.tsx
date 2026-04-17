@@ -41,15 +41,31 @@ import {
 interface StudentFullDetails {
   id: number; 
   fullname: string;
+  firstname: string | null;
+  middlename: string | null;
+  lastname: string | null;
   father_name: string | null;
   mother_name: string | null;
   father_email: string | null;
   mother_email: string | null;
+  father_occupation: string | null;
+  mother_occupation: string | null;
+  father_annual_income: number | string | null;
+  mother_annual_income: number | string | null;
   correspondence_details: any; 
   permanent_details: any; 
   nationality: string | null;
+  religion: string | null;
+  caste: string | null;
+  blood_group: string | null;
+  place_of_birth: string | null;
+  native_place: string | null;
+  aadhar_card_number: string | null;
+  pan_no: string | null;
   created_at: string; // Admission Date
   admission_type: string | null;
+  admission_category: string | null;
+  how_did_you_know: string | null;
   dateofbirth: string | null;
   gender: string | null;
   student_mobile_no: string | null;
@@ -58,6 +74,7 @@ interface StudentFullDetails {
   email: string | null;
   photo_path: string | null;
   roll_number: string | null;
+  academic_records: any;
   scholarship_categories: { name: string } | null;
 }
 
@@ -79,8 +96,10 @@ interface AcademicYearFinancials {
   net_payable_fee: number; 
   status: string;
   is_registered: boolean; 
-  payment_plan: string | null; // <-- NEW
-  installment_undertaking_path: string | null; // <-- NEW
+  payment_plan: string | null;
+  installment_dates: string[] | null;
+  installment_letter: string | null;
+  installment_undertaking_path: string | null;
   semesters: SemesterEnrollment[];
   payments: Payment[]; 
   
@@ -271,19 +290,28 @@ const AcademicYearFinancialCard: React.FC<{
             {/* --- NEWLY ADDED SECTION --- */}
             <Separator className="my-1"/>
             <InfoItem label="Payment Plan" value={year.payment_plan || 'N/A'} />
-            {year.payment_plan === 'Installment' && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                asChild 
-                className="w-full"
-                disabled={!undertakingUrl}
-              >
-                <Link href={undertakingUrl || "#"} target="_blank" rel="noopener noreferrer">
-                  <FileCheck className="h-4 w-4 mr-2" />
-                  View Undertaking
-                </Link>
-              </Button>
+            {year.payment_plan === 'Installments' && year.installment_letter && (
+              <div className="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1 flex items-center gap-1">
+                  <FileCheck size={12} />
+                  Installment Justification (Letter)
+                </p>
+                <p className="text-xs text-amber-900 italic leading-relaxed">
+                  "{year.installment_letter}"
+                </p>
+                {year.installment_dates && year.installment_dates.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-amber-200">
+                    <p className="text-[9px] font-bold text-amber-700 uppercase mb-1">Proposed Dates:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {year.installment_dates.map((d: string, i: number) => (
+                        <span key={i} className="px-2 py-0.5 bg-white border border-amber-200 rounded text-[9px] font-bold">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             <Separator className="my-1"/>
             {/* --- END OF NEW SECTION --- */}
@@ -393,9 +421,14 @@ function StudentFeeDetailPage() {
         const { data: studentData, error: studentError } = await supabase
           .from("students")
           .select(`
-            id, fullname, father_name, mother_name, father_email, mother_email,
-            correspondence_details, permanent_details, nationality, created_at, 
-            admission_type, dateofbirth, roll_number,
+            id, fullname, firstname, middlename, lastname, 
+            father_name, mother_name, father_email, mother_email,
+            father_occupation, mother_occupation, father_annual_income, mother_annual_income,
+            correspondence_details, permanent_details, nationality, 
+            religion, caste, blood_group, place_of_birth, native_place,
+            aadhar_card_number, pan_no, created_at, 
+            admission_type, admission_category, how_did_you_know,
+            dateofbirth, roll_number, academic_records,
             gender, student_mobile_no, father_mobile_no, mother_mobile_no, email,
             photo_path,
             scholarship_categories(name)
@@ -418,7 +451,8 @@ function StudentFeeDetailPage() {
           .select(`
             id, academic_year_name, academic_year_session, total_fee, 
             scholarship_name, scholarship_amount, net_payable_fee, status,
-            is_registered, payment_plan, installment_undertaking_path, 
+            is_registered, payment_plan, installment_letter, 
+            installment_dates, installment_undertaking_path, 
             course:courses ( name ),
             semesters:student_semesters ( 
               status, 
@@ -482,6 +516,8 @@ function StudentFeeDetailPage() {
             remainingDue: remainingDue,
             // --- ADDED NEW FIELDS ---
             payment_plan: ay.payment_plan,
+            installment_letter: ay.installment_letter,
+            installment_dates: ay.installment_dates,
             installment_undertaking_path: ay.installment_undertaking_path,
             // ------------------------
           };
@@ -553,7 +589,7 @@ function StudentFeeDetailPage() {
         
         {/* --- 1. Student Info Header --- */}
         <div className="p-3 border bg-background rounded-lg shadow-sm">
-          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Student Information</h3>
+          <h3 className="text-lg font-bold mb-3 border-b pb-1 text-primary">Biometric Profile</h3>
           
           <div className="flex flex-col md:flex-row gap-4">
             {/* Photo */}
@@ -570,52 +606,142 @@ function StudentFeeDetailPage() {
 
             {/* Details */}
             <div className="flex-1 space-y-3">
-              {/* Personal/Academic Details Grid (4 Columns) */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
-                
-                {/* Col 1 */}
-                <div className="space-y-2">
-                  <InfoItem label="Full Name" value={student.fullname} />
-                  <InfoItem label="GR No" value={student.id} />
-                  <InfoItem label="Roll No" value={student.roll_number} />
-                  <InfoItem label="Admission Date" value={formatDate(student.created_at)} />
-                </div>
-                
-                {/* Col 2 */}
-                <div className="space-y-2">
-                  <InfoItem label="Gender" value={student.gender} />
-                  <InfoItem label="DOB" value={formatDate(student.dateofbirth)} />
-                  <InfoItem label="Nationality" value={student.nationality} />
-                  <InfoItem label="Mobile" value={student.student_mobile_no} />
-                </div>
-                
-                {/* Col 3 */}
-                <div className="space-y-2">
-                  <InfoItem label="Father's Name" value={student.father_name} />
-                  <InfoItem label="Father's Mobile" value={student.father_mobile_no} />
-                  <InfoItem label="Father's Email" value={student.father_email} />
-                  <InfoItem label="Admission Type" value={student.admission_type} />
-                </div>
-
-                {/* Col 4 */}
-                <div className="space-y-2">
-                  <InfoItem label="Mother's Name" value={student.mother_name} />
-                  <InfoItem label="Mother's Mobile" value={student.mother_mobile_no} />
-                  <InfoItem label="Mother's Email" value={student.mother_email} />
-                  <InfoItem label="Scholarship Strategy" value={student.scholarship_categories?.name} />
-                </div>
-              </div>
-
-              <Separator className="my-2" />
-
-              {/* Address Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                <AddressCard title="Correspondence Address" detailsJson={student.correspondence_details} />
-                <AddressCard title="Permanent Address" detailsJson={student.permanent_details} />
+                <InfoItem label="Full Name" value={student.fullname} />
+                <InfoItem label="AUID / GR No" value={student.roll_number || student.id} />
+                <InfoItem label="Admin Status" value="Verified" className="text-green-600" />
+                <InfoItem label="Admission Date" value={formatDate(student.created_at)} />
+                <InfoItem label="Gender" value={student.gender} />
+                <InfoItem label="DOB" value={formatDate(student.dateofbirth)} />
+                <InfoItem label="Nationality" value={student.nationality} />
+                <InfoItem label="Contact" value={student.student_mobile_no} />
               </div>
             </div>
           </div>
         </div>
+
+        {/* --- NEW: FULL FORM DETAILS SECTION --- */}
+        <Accordion type="single" collapsible className="w-full">
+           <AccordionItem value="registry-details" className="border rounded-lg bg-white overflow-hidden shadow-sm">
+              <AccordionTrigger className="px-5 py-4 hover:no-underline bg-slate-50">
+                 <div className="flex items-center gap-3">
+                    <UserRound size={18} className="text-[#1A3A6B]" />
+                    <span className="font-bold text-[#1A3A6B] text-sm uppercase tracking-wider">Registry Profile (Full Form Details)</span>
+                 </div>
+              </AccordionTrigger>
+              <AccordionContent className="p-6 space-y-8">
+                 {/* Social & Identity */}
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 border-b pb-2">Identity Details</h4>
+                       <InfoItem label="Aadhar No" value={student.aadhar_card_number} />
+                       <InfoItem label="PAN No" value={student.pan_no} />
+                       <InfoItem label="Blood Group" value={student.blood_group} />
+                    </div>
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 border-b pb-2">Social Profile</h4>
+                       <InfoItem label="Religion" value={student.religion} />
+                       <InfoItem label="Caste / Sub-Caste" value={student.caste} />
+                       <InfoItem label="Admission Category" value={student.admission_category} />
+                    </div>
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 border-b pb-2">Origin</h4>
+                       <InfoItem label="Place of Birth" value={student.place_of_birth} />
+                       <InfoItem label="Native Place" value={student.native_place} />
+                       <InfoItem label="How did you know?" value={student.how_did_you_know} />
+                    </div>
+                 </div>
+
+                 {/* Family & Contact */}
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b pb-2">Father's Details</h4>
+                       <div className="grid grid-cols-2 gap-4">
+                          <InfoItem label="Name" value={student.father_name} />
+                          <InfoItem label="Mobile" value={student.father_mobile_no} />
+                          <InfoItem label="Email" value={student.father_email} />
+                          <InfoItem label="Occupation" value={student.father_occupation} />
+                          <InfoItem label="Ann. Income" value={student.father_annual_income ? `₹${student.father_annual_income}` : "N/A"} />
+                       </div>
+                    </div>
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b pb-2">Mother's Details</h4>
+                       <div className="grid grid-cols-2 gap-4">
+                          <InfoItem label="Name" value={student.mother_name} />
+                          <InfoItem label="Mobile" value={student.mother_mobile_no} />
+                          <InfoItem label="Email" value={student.mother_email} />
+                          <InfoItem label="Occupation" value={student.mother_occupation} />
+                          <InfoItem label="Ann. Income" value={student.mother_annual_income ? `₹${student.mother_annual_income}` : "N/A"} />
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* Address Information */}
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <AddressCard title="Correspondence Address" detailsJson={student.correspondence_details} />
+                    <AddressCard title="Permanent Address" detailsJson={student.permanent_details} />
+                 </div>
+
+                 {/* Academic Records */}
+                 <div className="space-y-4">
+                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 border-b pb-2">Academic Credentials (JSON Records)</h4>
+                     <div className="overflow-x-auto border rounded-xl">
+                        <Table>
+                           <TableHeader className="bg-slate-50">
+                              <TableRow>
+                                 <TableHead className="text-[10px] uppercase font-bold">Level</TableHead>
+                                 <TableHead className="text-[10px] uppercase font-bold">Board / Seat No</TableHead>
+                                 <TableHead className="text-[10px] uppercase font-bold">Year</TableHead>
+                                 <TableHead className="text-[10px] uppercase font-bold">Institutue</TableHead>
+                                 <TableHead className="text-right text-[10px] uppercase font-bold">Score (%)</TableHead>
+                              </TableRow>
+                           </TableHeader>
+                           <TableBody>
+                              {student.academic_records ? (
+                                 <>
+                                    <TableRow>
+                                       <TableCell className="text-xs font-bold">SSC (10th)</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.ssc_board || "N/A"} / {student.academic_records.ssc_seat || "N/A"}</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.ssc_year || "N/A"}</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.ssc_inst || "N/A"}</TableCell>
+                                       <TableCell className="text-right text-xs font-black">{student.academic_records.ssc_pct || "N/A"}%</TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                       <TableCell className="text-xs font-bold">HSC (12th)</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.hsc_board || "N/A"} / {student.academic_records.hsc_seat || "N/A"}</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.hsc_year || "N/A"}</TableCell>
+                                       <TableCell className="text-xs">{student.academic_records.hsc_inst || "N/A"}</TableCell>
+                                       <TableCell className="text-right text-xs font-black">{student.academic_records.hsc_pct || "N/A"}%</TableCell>
+                                    </TableRow>
+                                    {student.academic_records.dip_year && (
+                                       <TableRow>
+                                          <TableCell className="text-xs font-bold">Diploma</TableCell>
+                                          <TableCell className="text-xs">{student.academic_records.dip_board || "N/A"} / {student.academic_records.dip_seat || "N/A"}</TableCell>
+                                          <TableCell className="text-xs">{student.academic_records.dip_year || "N/A"}</TableCell>
+                                          <TableCell className="text-xs">{student.academic_records.dip_inst || "N/A"}</TableCell>
+                                          <TableCell className="text-right text-xs font-black">{student.academic_records.dip_pct || "N/A"}%</TableCell>
+                                       </TableRow>
+                                    )}
+                                    <TableRow className="bg-indigo-50/30">
+                                       <TableCell className="text-xs font-bold">Entrance</TableCell>
+                                       <TableCell className="text-xs col-span-3">
+                                          {student.academic_records.cet_pct ? `CET: ${student.academic_records.cet_pct}%` : ""}
+                                          {student.academic_records.jee_total ? ` | JEE: ${student.academic_records.jee_total}` : ""}
+                                       </TableCell>
+                                       <TableCell colSpan={3} />
+                                       <TableCell className="text-right text-xs font-black">{student.academic_records.cet_pct || student.academic_records.jee_total || "N/A"}</TableCell>
+                                    </TableRow>
+                                 </>
+                              ) : (
+                                 <TableRow><TableCell colSpan={5} className="text-center py-4 text-xs">No specific academic records mapped.</TableCell></TableRow>
+                              )}
+                           </TableBody>
+                        </Table>
+                     </div>
+                 </div>
+              </AccordionContent>
+           </AccordionItem>
+        </Accordion>
         
         {/* --- 2. Global Financial Summary --- */}
         <div className="p-3 border bg-background rounded-lg shadow-sm">
@@ -686,7 +812,7 @@ function StudentFeeDetailPage() {
           <CardHeader className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <Button variant="outline" size="icon" asChild>
-                <Link href={`/management/students/fees`}> 
+                <Link href={`/management/students`}> 
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               </Button>
