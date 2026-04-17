@@ -1,7 +1,5 @@
-// app/layout.tsx (Example)
-
 import './globals.css'
-import Layout from '@/components/layout' // Adjust path if necessary
+import Layout from '@/components/layout'
 
 export default function RootLayout({
   children,
@@ -9,9 +7,13 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>
-        {/* All pages (children) will be wrapped by your Layout component */}
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+      </head>
+      <body suppressHydrationWarning style={{ fontFamily: "'Poppins', sans-serif" }}>
         <Layout>{children}</Layout>
       </body>
     </html>

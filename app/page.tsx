@@ -2,50 +2,85 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import LoginForm from "@/components/login-form"
+import { Loader2, ShieldCheck, GraduationCap } from "lucide-react"
 import { getSupabaseClient } from "@/lib/supabase/client"
+import { getStudentProfile } from "@/lib/erp-logic"
 
+/**
+ * Universal Gatekeeper (Client-Side Validated)
+ * 
+ * Securely routes users based on their role and verification status.
+ */
 export default function Home() {
-  const [isLoading, setIsLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [status, setStatus] = useState("Initializing...")
   const router = useRouter()
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkUserAndRedirect = async () => {
       try {
+        setStatus("Verifying authenticity...")
         const supabase = getSupabaseClient()
-
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (session) {
-          setIsAuthenticated(true)
-          router.push("/admission")
+        
+        // 1. Check Auth 
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          router.replace("/student/login")
+          return
         }
-      } catch (error) {
-        console.error("Auth check error:", error)
-      } finally {
-        setIsLoading(false)
+
+        const user = session.user
+        const role = user.user_metadata?.role
+
+        // 2. Role-based routing
+        if (role === 'admin') {
+          setStatus("Granting Management Access...")
+          router.replace("/management/dashboard")
+          return
+        }
+
+        // 3. Student state routing
+        setStatus("Checking profile status...")
+        const student = await getStudentProfile(supabase, user.id)
+
+        if (!student || !student.is_verifiedby_admin) {
+          setStatus("Redirecting to Admission...")
+          router.replace("/student/admission")
+        } else {
+          setStatus("Accessing Dashboard...")
+          router.replace("/student/dashboard")
+        }
+
+      } catch (error: any) {
+        console.error("Secure Routing Error:", error)
+        setStatus("Session error. Re-authenticating...")
+        setTimeout(() => router.replace("/student/login"), 1500)
       }
     }
 
-    checkAuth()
+    checkUserAndRedirect()
   }, [router])
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-background">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted font-medium">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-background p-4">
-      <LoginForm />
-    </main>
+    <div className="min-h-screen bg-[#F5F7FB] flex flex-col items-center justify-center font-sans">
+        <div className="relative flex flex-col items-center max-w-sm w-full px-8 text-center">
+            <div className="w-20 h-20 bg-[#1A3A6B] rounded-2xl flex items-center justify-center shadow-xl mb-10">
+                <GraduationCap className="text-white" size={40} />
+            </div>
+
+            <div className="flex flex-col items-center gap-4 mb-8">
+                <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-[#2E75C7]" />
+                    <h1 className="text-[#1A3A6B] text-xs font-black tracking-[0.2em] uppercase">{status}</h1>
+                </div>
+            </div>
+            
+            <div className="pt-8 border-t border-gray-200 w-full flex items-center justify-center gap-2">
+                <ShieldCheck size={14} className="text-[#2E75C7]" />
+                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                    Secured ERP Handshake
+                </p>
+            </div>
+        </div>
+    </div>
   )
 }
