@@ -110,44 +110,137 @@ export default function FeesPage() {
 
   const { totalPayable, paid, balance, progress, year, payments: yearPayments } = activeYearData!
 
+  /* --- Helper function to convert number to words (Indian Rupee format) --- */
+  const toWords = (num: number): string => {
+    const a = [
+      '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+      'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'
+    ];
+    const b = [
+      '', '', 'Twenty', 'Thirty', 'Forty', 'Fivey', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
+    ];
+
+    const inWords = (n: number): string => {
+      let str = '';
+      if (n === 0) return '';
+      if (n < 20) {
+        str = a[n];
+      } else {
+        const digit = n % 10; 
+        const tens = Math.floor(n / 10);
+        str = b[tens] + (digit ? ' ' + a[digit] : '');
+      }
+      return str;
+    };
+
+    const numStr = num.toFixed(2);
+    const [rupees, paise] = numStr.split('.').map(Number);
+
+    let rupeesWords = '';
+    if (rupees === 0) {
+      rupeesWords = 'Zero';
+    } else {
+      const crores = Math.floor(rupees / 10000000);
+      const lakhs = Math.floor((rupees % 10000000) / 100000);
+      const thousands = Math.floor((rupees % 100000) / 1000);
+      const hundreds = Math.floor((rupees % 1000) / 1000);
+      const rest = rupees % 100;
+
+      if (crores) rupeesWords += inWords(crores) + ' Crore ';
+      if (lakhs) rupeesWords += inWords(lakhs) + ' Lakh ';
+      if (thousands) rupeesWords += inWords(thousands) + ' Thousand ';
+      if (hundreds) rupeesWords += inWords(hundreds) + ' Hundred ';
+      if (rest) rupeesWords += inWords(rest);
+    }
+
+    return rupeesWords.trim() + ' Rupees Only';
+  };
+
   if (receipt) return (
     <div className="min-h-screen bg-[#F8FAFC]" style={{ fontFamily: "'Poppins', sans-serif" }}>
-      <div className="max-w-xl mx-auto min-h-screen flex flex-col">
+      <div className="max-w-2xl mx-auto min-h-screen flex flex-col pb-10">
         <div className="bg-white/90 backdrop-blur-md sticky top-0 z-50 px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <button onClick={() => setReceipt(null)} className="w-8 h-8 rounded-xl border border-gray-100 flex items-center justify-center"><ArrowLeft size={16} /></button>
-          <h1 className="text-[#1A3A6B] font-bold text-sm tracking-tight">Receipt</h1>
-          <button className="w-8 h-8 rounded-xl border border-gray-100 flex items-center justify-center"><Download size={15} /></button>
+          <button onClick={() => setReceipt(null)} className="w-8 h-8 rounded-xl border border-gray-100 flex items-center justify-center hover:bg-slate-50 transition-colors"><ArrowLeft size={16} /></button>
+          <div className="flex flex-col items-center">
+             <h1 className="text-[#1A3A6B] font-bold text-sm tracking-tight leading-none">Fee Receipt</h1>
+             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">#{receipt.receipt_no}</p>
+          </div>
+          <button onClick={() => window.print()} className="w-8 h-8 rounded-xl border border-indigo-100 bg-indigo-50 flex items-center justify-center text-indigo-600"><Download size={15} /></button>
         </div>
-        <div className="p-4">
-          <div className="bg-[#0F2557] rounded-2xl p-6 text-center mb-5 relative overflow-hidden shadow-lg">
-            <Landmark size={120} className="absolute top-0 right-0 opacity-5 pointer-events-none" />
-            <h2 className="text-white font-black text-xl tracking-tight uppercase">AIKTC</h2>
-            <p className="text-white/60 text-[11px] font-medium mt-1">School of Engineering</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-6 mb-5">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <p className="text-gray-400 text-[9px] font-bold uppercase tracking-widest">No.</p>
-                <p className="text-[#1A3A6B] font-black text-lg leading-none mt-1">#{receipt.receipt_no}</p>
+
+        <div className="p-4 sm:p-6 space-y-6">
+          {/* Institutional Branding */}
+          <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-sm text-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/50 rounded-full blur-3xl -mr-16 -mt-16" />
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-xl shadow-indigo-900/20">
+                 <Landmark className="text-white" size={24} />
               </div>
-              <div className="text-right">
-                <p className="text-gray-400 text-[9px] font-bold uppercase tracking-widest">Date</p>
-                <p className="text-[#1A3A6B] font-bold text-xs mt-1">{new Date(receipt.created_at).toLocaleDateString()}</p>
-              </div>
-            </div>
-            <div className="space-y-3 border-t border-dashed border-gray-100 pt-5 mb-6">
-              <DottedRow label="Student" value={student.fullname} />
-              <DottedRow label="AUID" value={studentId} />
-              <DottedRow label="Type" value={receipt.fees_type} />
-            </div>
-            <div className="p-4 bg-gray-50 rounded-xl flex items-center justify-between border border-gray-100">
-               <span className="text-[#1A3A6B] font-black text-sm">TOTAL PAID</span>
-               <span className="text-[#1A3A6B] font-black text-xl tracking-tight">₹{Number(receipt.amount).toLocaleString()}</span>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none mb-1">ANJUMAN-I-ISLAM'S</h1>
+              <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest leading-loose">AIKTC School of Engineering</h2>
+              <p className="text-[10px] text-slate-400 font-medium max-w-[200px] mt-2">Plot No. 2&3, Sec-16, New Panvel, Khandagaon, New</p>
             </div>
           </div>
-          <div className="flex gap-3">
-            <button className="flex-1 h-11 bg-white border border-[#1A3A6B] text-[#1A3A6B] rounded-xl text-xs font-bold">Share</button>
-            <button className="flex-1 h-11 bg-[#1A3A6B] text-white rounded-xl text-xs font-bold shadow-md">Print PDF</button>
+
+          {/* Student Info Grid */}
+          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden divide-y divide-slate-50">
+             <div className="p-6 bg-slate-50/50 flex items-center justify-between">
+                <div>
+                   <p className="text-[9px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-1">Receipt Details</p>
+                   <p className="text-xs font-bold text-slate-400">{new Date(receipt.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                </div>
+                <div className="text-right">
+                   <p className="text-xs font-black text-slate-800 uppercase tracking-tighter">Verified Official</p>
+                </div>
+             </div>
+
+             <div className="p-6 space-y-4">
+                <DottedRow label="Full Name" value={student.fullname} />
+                <DottedRow label="Academic ID" value={student.roll_number || student.registration_no || "N/A"} />
+                <DottedRow label="Course / Branch" value={student.courses?.name || "N/A"} />
+                <DottedRow label="Academic term" value={academicYears.find(y => y.id === receipt.student_academic_year_id)?.academic_year_name || "N/A"} />
+                <DottedRow label="Payment Mode" value={receipt.payment_method || "Digital Transfer"} />
+             </div>
+
+             <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Description</p>
+                   <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-slate-700">{receipt.fees_type}</span>
+                      <span className="text-lg font-black text-slate-800">₹{Number(receipt.amount).toLocaleString('en-IN')}</span>
+                   </div>
+                </div>
+
+                <div className="p-5 bg-indigo-600 rounded-2xl relative overflow-hidden group">
+                   <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700" />
+                   <div className="relative z-10">
+                      <p className="text-indigo-100/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">Amount In Words</p>
+                      <p className="text-white text-xs font-bold leading-relaxed">{toWords(Number(receipt.amount))}</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mt-8 pt-4 border-t border-slate-100">
+                   <div>
+                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Verified Signature</p>
+                      <div className="h-10 w-32 border-b border-slate-200 mt-4" />
+                   </div>
+                   <div className="text-right flex flex-col items-end">
+                      <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center mb-1">
+                         <ShieldCheck className="text-emerald-500" size={24} />
+                      </div>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">E-Receipt ID: {receipt.id.slice(0, 8)}</p>
+                   </div>
+                </div>
+             </div>
+          </div>
+
+          <div className="flex gap-4">
+            <button className="flex-1 h-12 rounded-2xl bg-white border border-slate-200 text-slate-500 font-bold text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+               <Share2 size={14} /> Share
+            </button>
+            <button onClick={() => window.print()} className="flex-1 h-12 rounded-2xl bg-[#0F2557] text-white font-bold text-xs shadow-xl shadow-blue-900/20 hover:bg-[#1E4FA0] transition-all flex items-center justify-center gap-2">
+               <Download size={14} /> Download PDF
+            </button>
           </div>
         </div>
       </div>

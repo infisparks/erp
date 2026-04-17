@@ -78,7 +78,7 @@ export default function StudentDashboard() {
     router.push("/student/login")
   }
 
-  if (loading) return (
+  if (loading || (!student && !error)) return (
     <div className="min-h-screen bg-[#F7F4EF] flex flex-col items-center justify-center gap-6">
        <div className="relative">
           <Loader2 className="h-12 w-12 animate-spin text-[#1A3A6B]/20" strokeWidth={1} />
@@ -132,7 +132,7 @@ export default function StudentDashboard() {
                </h2>
                <div className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 bg-[#4ADE80] rounded-full shadow-[0_0_8px_#4ADE80]" />
-                  <p className="text-white/90 font-medium text-[10px] uppercase tracking-wider">{student.courses?.name || "B.E. Engineering"}</p>
+                  <p className="text-white/90 font-medium text-[10px] uppercase tracking-wider">{student?.courses?.name || "B.E. Engineering"}</p>
                </div>
             </div>
           </div>
@@ -183,7 +183,7 @@ export default function StudentDashboard() {
                         <div className="px-2.5 py-1 bg-[#60A5FA]/10 border border-[#60A5FA]/20 rounded-lg flex items-center gap-2">
                            <School size={10} className="text-[#60A5FA]" />
                            <span className="text-[9px] font-medium text-[#60A5FA] uppercase tracking-wider">
-                              {student.courses?.name?.split(' ')[0] || 'Engg'}
+                              {student?.courses?.name?.split(' ')[0] || 'Engg'}
                            </span>
                         </div>
                      </div>

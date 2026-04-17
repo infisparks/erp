@@ -85,7 +85,9 @@ interface AcademicYearEnrollment {
   scholarship_amount: number
   net_payable_fee: number
   payment_plan: string | null
-  installment_dates: any[] | null
+  installment_dates: string[] | null
+  installment_letter: string | null
+  registration_data: any | null
 }
 
 interface SemesterRegistration {
@@ -96,8 +98,6 @@ interface SemesterRegistration {
   is_verifiedby_admin: boolean
   is_verifiedby_accountant: boolean
   is_verifiedby_examcell: boolean
-  total_fee: number
-  net_payable_fee: number
   created_at: string
 }
 
@@ -145,6 +145,7 @@ function StudentStatusHistoryContent() {
   const [student, setStudent] = useState<StudentProfile | null>(null)
   const [history, setHistory] = useState<AcademicYearEnrollment[]>([])
   const [semesters, setSemesters] = useState<SemesterRegistration[]>([])
+  const [metadata, setMetadata] = useState<{ categories: any[], amounts: any[] }>({ categories: [], amounts: [] })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -162,6 +163,7 @@ function StudentStatusHistoryContent() {
         .from("student_academic_years")
         .select(`*, course:courses(name), scholarship_category:scholarship_categories(name)`)
         .eq("student_id", studentId)
+        .order("is_locked", { ascending: true }) // Put unlocked ones at top
         .order("created_at", { ascending: false })
 
       const { data: semsData, error: semsErr } = await supabase
@@ -170,8 +172,12 @@ function StudentStatusHistoryContent() {
         .eq("student_id", studentId)
         .order("created_at", { ascending: false })
 
+      const { data: catData } = await supabase.from("scholarship_categories").select("*")
+      const { data: amtData } = await supabase.from("scholarship_amounts").select("*").eq("course_id", sData.course_id)
+
       if (hErr || semsErr) throw hErr || semsErr
 
+      setMetadata({ categories: catData || [], amounts: amtData || [] })
       setHistory(hData.map((item: any) => ({
         ...item,
         course_name: item.course?.name || "N/A",
@@ -311,9 +317,9 @@ function StudentStatusHistoryContent() {
                 <TableHeader className="bg-slate-50/50 dark:bg-slate-800/50">
                   <TableRow className="hover:bg-transparent border-b border-slate-100 dark:border-slate-800">
                     <TableHead className="px-8 font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Target Term</TableHead>
-                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Financial Summary</TableHead>
-                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Verification Pipeline</TableHead>
-                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Governance</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Strategy & Financials</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Semester Clearance</TableHead>
+                    <TableHead className="font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest text-center">Year Lock</TableHead>
                     <TableHead className="px-8 text-right font-bold text-slate-900 dark:text-slate-100 uppercase text-[10px] tracking-widest">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -328,55 +334,51 @@ function StudentStatusHistoryContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">₹{item.net_payable_fee.toLocaleString()}</span>
+                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{item.net_payable_fee.toLocaleString()}</span>
                             <Badge variant="outline" className="text-[9px] h-4 py-0 font-bold bg-indigo-50 text-indigo-600 border-indigo-100">
                               {item.scholarship_category_name}
                             </Badge>
                           </div>
-                          <span className="text-[10px] text-slate-400 italic">Plan: {item.payment_plan || 'One Time'}</span>
+                          <div className="flex flex-col text-slate-900 font-bold uppercase tracking-tight">
+                             <span className="text-[10px]">{item.registration_data?.payment_plan || 'One Time'}</span>
+                             {item.registration_data?.payment_plan === 'Installment' && item.installment_dates && (
+                               <div className="mt-1 flex flex-col gap-1">
+                                  <div className="flex flex-wrap gap-1">
+                                    {item.installment_dates.map((date, idx) => (
+                                      <span key={idx} className="text-[8px] bg-amber-50 text-amber-700 px-1 border border-amber-100 rounded">
+                                        Inv {idx + 1}: {date}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  {item.installment_letter && (
+                                    <div className="bg-slate-50 p-1.5 rounded border border-slate-100 flex items-start gap-1.5 mt-0.5">
+                                      <ClipboardList size={8} className="text-slate-400 mt-0.5" />
+                                      <p className="text-[8px] text-slate-500 italic leading-tight">{item.installment_letter}</p>
+                                    </div>
+                                  )}
+                               </div>
+                             )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                         <div className="flex items-center justify-center gap-4">
-                            <PipelineCheckbox 
-                               label="ADM" 
-                               checked={item.is_verified_by_admin} 
-                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_admin", v)} 
-                               disabled={updatingId === item.id}
-                            />
-                            <PipelineCheckbox 
-                               label="ACC" 
-                               checked={item.is_verified_by_account} 
-                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_account", v)} 
-                               disabled={updatingId === item.id}
-                            />
-                            <PipelineCheckbox 
-                               label="EXM" 
-                               checked={item.is_verified_by_examcell} 
-                               onToggle={(v) => handleUpdateField(item.id, "student_academic_years", "is_verified_by_examcell", v)} 
-                               disabled={updatingId === item.id}
-                            />
+                         <div className="text-center">
+                            <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">N/A at Year Level</span>
                          </div>
                       </TableCell>
                       <TableCell>
-                         <div className="flex items-center justify-center gap-6">
-                            <div className="flex flex-col items-center gap-1">
-                               <Switch 
-                                 checked={item.is_eligible_for_next_year} 
-                                 onCheckedChange={(v) => handleUpdateField(item.id, "student_academic_years", "is_eligible_for_next_year", v)}
-                                 className="scale-75 data-[state=checked]:bg-emerald-500"
-                               />
-                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter">Eligible</span>
-                            </div>
-                            <div className="flex flex-col items-center gap-1">
+                         <div className="flex items-center justify-center">
+                            <div className="flex flex-col items-center gap-1.5">
                                <Switch 
                                  checked={item.is_locked} 
                                  onCheckedChange={(v) => handleUpdateField(item.id, "student_academic_years", "is_locked", v)}
-                                 className="scale-75 data-[state=checked]:bg-rose-500"
+                                 className="scale-90 data-[state=checked]:bg-rose-500"
                                />
-                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter">Locked</span>
+                               <span className={cn("text-[9px] font-black uppercase tracking-tighter", item.is_locked ? "text-rose-500" : "text-slate-400")}>
+                                {item.is_locked ? "Record Locked" : "Unlocked"}
+                               </span>
                             </div>
                          </div>
                       </TableCell>
@@ -390,9 +392,13 @@ function StudentStatusHistoryContent() {
                           <DropdownMenuContent align="end" className="w-48 rounded-xl">
                             <DropdownMenuLabel>Year Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <EditYearDialog item={item} onUpdate={(d) => {
-                               Object.entries(d).forEach(([k, v]) => handleUpdateField(item.id, "student_academic_years", k, v))
-                            }} />
+                             <EditYearDialog 
+                               item={item} 
+                               metadata={metadata}
+                               onUpdate={(d) => {
+                                 Object.entries(d).forEach(([k, v]) => handleUpdateField(item.id, "student_academic_years", k, v))
+                               }} 
+                             />
                             <DropdownMenuItem className="text-rose-500">
                                 <Lock className="h-4 w-4 mr-2" /> Force Lock Record
                             </DropdownMenuItem>
@@ -430,7 +436,7 @@ function StudentStatusHistoryContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm font-bold text-emerald-600">₹{s.net_payable_fee.toLocaleString()}</span>
+                        <span className="text-[10px] text-slate-400 font-medium italic">Managed at Year Level</span>
                       </TableCell>
                       <TableCell>
                          <div className="flex items-center justify-center gap-4">
@@ -471,18 +477,18 @@ function StudentStatusHistoryContent() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            <InfoCard 
              icon={<ShieldCheck className="text-emerald-500" />} 
-             title="Eligibility Protocol" 
-             description="Marking 'Eligible' enables self-service registration for upcoming sessions in the student portal." 
+             title="Semester Promotion" 
+             description="Setting 'Eligible' on a semester allows the student to proceed to the next academic session once the current year is locked." 
            />
            <InfoCard 
              icon={<Lock className="text-rose-500" />} 
-             title="Lock Mechanism" 
-             description="Locks prevent students from altering bio-data or registration details for that specific term." 
+             title="Year Policy Lock" 
+             description="Locking a year prevents the student from changing their scholarship or fee payment plan (One Time/Installments)." 
            />
            <InfoCard 
              icon={<Building2 className="text-indigo-500" />} 
-             title="Triple-Check" 
-             description="Final verification requires Admin, Account, and Exam Cell flags to be synchronized." 
+             title="Admin Clearance" 
+             description="Each semester requires independent clearance from Admin, Account, and Exam Cell departments." 
            />
         </div>
 
@@ -523,14 +529,61 @@ const InfoCard: React.FC<{ icon: React.ReactNode, title: string, description: st
 
 const EditYearDialog: React.FC<{ 
   item: AcademicYearEnrollment, 
+  metadata: { categories: any[], amounts: any[] },
   onUpdate: (data: Partial<AcademicYearEnrollment>) => void 
-}> = ({ item, onUpdate }) => {
+}> = ({ item, metadata, onUpdate }) => {
   const [formData, setFormData] = useState({
     total_fee: item.total_fee,
     scholarship_amount: item.scholarship_amount,
     net_payable_fee: item.net_payable_fee,
-    payment_plan: item.payment_plan || ""
+    scholarship_category_id: (item as any).scholarship_category_id || "",
+    payment_plan: (item.registration_data?.payment_plan === "Installments" || item.registration_data?.payment_plan === "Installment" || item.status === "Installment") ? "Installment" : "One Time",
+    installment_dates: item.installment_dates || item.registration_data?.installment_dates || [],
+    installment_letter: item.installment_letter || item.registration_data?.installment_letter || ""
   });
+
+  const handleCategoryChange = (catId: string) => {
+    const amt = metadata.amounts.find(a => a.category_id === catId)?.amount || 0;
+    setFormData({
+      ...formData,
+      scholarship_category_id: catId,
+      scholarship_amount: amt,
+      net_payable_fee: formData.total_fee - amt
+    });
+  }
+
+  const handleTotalFeeChange = (fee: number) => {
+    setFormData({
+      ...formData,
+      total_fee: fee,
+      net_payable_fee: fee - formData.scholarship_amount
+    });
+  }
+
+  const handleInstallmentDateChange = (index: number, value: string) => {
+    const newDates = Array.isArray(formData.installment_dates) ? [...formData.installment_dates] : [];
+    newDates[index] = value;
+    setFormData({ ...formData, installment_dates: newDates });
+  }
+
+  const commitChanges = () => {
+    const payload: any = {
+      total_fee: formData.total_fee,
+      scholarship_amount: formData.scholarship_amount,
+      net_payable_fee: formData.net_payable_fee,
+      scholarship_category_id: formData.scholarship_category_id,
+      installment_dates: formData.installment_dates,
+      installment_letter: formData.installment_letter,
+      status: formData.payment_plan, // Store simple status
+      registration_data: { 
+        ...item.registration_data, 
+        payment_plan: formData.payment_plan === "Installment" ? "Installments" : "One Time", // Match DB expectations
+        installment_dates: formData.installment_dates,
+        installment_letter: formData.installment_letter
+      }
+    };
+    onUpdate(payload);
+  }
 
   return (
     <Dialog>
@@ -539,8 +592,8 @@ const EditYearDialog: React.FC<{
             <Edit3 className="h-4 w-4 mr-2" /> Modify Financials
         </div>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] rounded-[1.5rem] overflow-hidden p-0 border-none shadow-2xl">
-        <div className="bg-indigo-600 p-6 text-white">
+      <DialogContent className="sm:max-w-[425px] rounded-[1.5rem] overflow-hidden p-0 border-none shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-indigo-600 p-6 text-white sticky top-0 z-10">
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-indigo-200" /> Financial Adjustment
           </DialogTitle>
@@ -548,27 +601,92 @@ const EditYearDialog: React.FC<{
             Updating record for {item.academic_year_name}
           </DialogDescription>
         </div>
-        <div className="p-8 space-y-5 bg-white dark:bg-slate-900">
-          <div className="space-y-2">
-            <Label className="text-[10px] font-black uppercase text-slate-400">Standard Base Fee</Label>
-            <Input type="number" className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.total_fee} onChange={(e) => setFormData({...formData, total_fee: Number(e.target.value)}) } />
+        <div className="p-8 space-y-6 bg-white dark:bg-slate-900">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase text-slate-400">Total Base Fee</Label>
+              <Input type="number" className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.total_fee} onChange={(e) => handleTotalFeeChange(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase text-slate-400">Benefit (Auto)</Label>
+              <Input type="number" disabled className="rounded-xl bg-slate-50 border-slate-200 opacity-60" value={formData.scholarship_amount} />
+            </div>
           </div>
+
           <div className="space-y-2">
-            <Label className="text-[10px] font-black uppercase text-slate-400">Scholarship Benefit</Label>
-            <Input type="number" className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.scholarship_amount} onChange={(e) => setFormData({...formData, scholarship_amount: Number(e.target.value)}) } />
+            <Label className="text-[10px] font-black uppercase text-slate-400">Scholarship Category</Label>
+            <select 
+              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={formData.scholarship_category_id}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+            >
+              <option value="">No Scholarship</option>
+              {metadata.categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
           </div>
+
           <div className="space-y-2 p-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900">
-            <Label className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">Net Payable Amount</Label>
-            <Input type="number" className="bg-transparent border-none text-xl font-black text-indigo-700 dark:text-indigo-300 p-0 focus-visible:ring-0 h-auto" value={formData.net_payable_fee} onChange={(e) => setFormData({...formData, net_payable_fee: Number(e.target.value)}) } />
+            <Label className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">Net Final Payable</Label>
+            <div className="text-2xl font-black text-indigo-700 dark:text-indigo-300">₹{formData.net_payable_fee.toLocaleString()}</div>
           </div>
-          <div className="space-y-2">
-            <Label className="text-[10px] font-black uppercase text-slate-400">Payment Structure</Label>
-            <Input className="rounded-xl border-slate-200 focus:ring-indigo-500" value={formData.payment_plan} onChange={(e) => setFormData({...formData, payment_plan: e.target.value}) } placeholder="Full Payment / Installments" />
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase text-slate-400">Payment Structure</Label>
+              <div className="flex gap-2">
+                {["One Time", "Installment"].map(plan => (
+                  <Button 
+                    key={plan}
+                    variant={formData.payment_plan === plan ? "default" : "outline"}
+                    className={cn(
+                      "flex-1 rounded-xl transition-all",
+                      formData.payment_plan === plan ? "bg-indigo-600 text-white shadow-md text-white" : "bg-slate-50 text-slate-400 border-none"
+                    )}
+                    onClick={() => setFormData({...formData, payment_plan: plan})}
+                  >
+                    {plan}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {formData.payment_plan === "Installment" && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase text-slate-400">Installment Dates (Max 2)</Label>
+                   <div className="grid grid-cols-2 gap-2">
+                      <Input 
+                        type="date" 
+                        value={formData.installment_dates[0] || ""} 
+                        onChange={(e) => handleInstallmentDateChange(0, e.target.value)}
+                        className="rounded-lg text-xs" 
+                      />
+                      <Input 
+                        type="date" 
+                        value={formData.installment_dates[1] || ""} 
+                        onChange={(e) => handleInstallmentDateChange(1, e.target.value)}
+                        className="rounded-lg text-xs" 
+                      />
+                   </div>
+                </div>
+                <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase text-slate-400">Installment Notice / Detail</Label>
+                   <textarea 
+                     className="w-full min-h-[80px] p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                     placeholder="Enter reason or structure details here..."
+                     value={formData.installment_letter}
+                     onChange={(e) => setFormData({...formData, installment_letter: e.target.value})}
+                   />
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter className="p-6 pt-0 bg-white dark:bg-slate-900">
-          <Button onClick={() => onUpdate(formData)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 font-bold shadow-lg shadow-indigo-600/20">
-             <Save className="h-4 w-4 mr-2" /> Commit Changes
+          <Button onClick={commitChanges} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 font-bold shadow-lg shadow-indigo-600/20">
+             <Save className="h-4 w-4 mr-2" /> Commit Financial Changes
           </Button>
         </DialogFooter>
       </DialogContent>

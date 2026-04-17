@@ -660,13 +660,13 @@ export default function FeesManagementPage() {
   return (
     <div className="p-4 md:p-8 space-y-6">
       {/* 1. Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
+        <div className="w-full sm:w-auto">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-800">
             Fees Management
           </h1>
-          <p className="text-lg text-muted-foreground">
-            Search or filter for students to add payments and view fee history.
+          <p className="text-sm md:text-lg text-muted-foreground mt-1">
+            Manage payments and view history.
           </p>
         </div>
       </div>
@@ -731,27 +731,27 @@ export default function FeesManagementPage() {
             </div>
 
             {/* Search Inputs and Action Buttons */}
-            <div className="flex flex-col md:flex-row gap-3 justify-between pt-2 items-end">
+            <div className="flex flex-col gap-4 justify-between pt-2">
               {/* Search Inputs */}
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:max-w-xl">
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
                 <div className="relative w-full">
-                  <Label htmlFor="name-search">Search by Name</Label>
+                  <Label htmlFor="name-search" className="text-xs font-bold uppercase text-slate-400">Name</Label>
                   <Input
                     id="name-search"
                     type="search"
                     placeholder="Search name..."
-                    className="w-full"
+                    className="w-full h-10"
                     value={studentSearch}
                     onChange={(e) => setStudentSearch(e.target.value)}
                   />
                 </div>
                 <div className="relative w-full">
-                  <Label htmlFor="roll-search">Search by Roll No.</Label>
+                  <Label htmlFor="roll-search" className="text-xs font-bold uppercase text-slate-400">Roll No.</Label>
                   <Input
                     id="roll-search"
                     type="search"
-                    placeholder="Search roll number..."
-                    className="w-full"
+                    placeholder="Search roll..."
+                    className="w-full h-10"
                     value={rollNumberSearch}
                     onChange={(e) => setRollNumberSearch(e.target.value)}
                   />
@@ -759,28 +759,28 @@ export default function FeesManagementPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2 justify-end w-full md:w-auto">
-                {/* NEW: Export Button */}
+              <div className="flex flex-wrap gap-2 justify-end w-full">
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={handleExportToExcel}
                   disabled={loading || students.length === 0}
-                  className="bg-green-500 hover:bg-green-600 text-white"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white border-none flex-1 sm:flex-none"
                 >
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export to XL
+                  Excel
                 </Button>
-                {/* Clear Button */}
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={handleFilterClear}
                   disabled={loading}
+                  className="flex-1 sm:flex-none"
                 >
                   <XCircle className="h-4 w-4 mr-2" />
                   Clear
                 </Button>
-                {/* Search Button (Triggers fetch with all filters/search) */}
-                <Button onClick={handleFilterSearch} disabled={loading}>
+                <Button onClick={handleFilterSearch} size="sm" disabled={loading} className="flex-1 sm:flex-none">
                   {loading ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (

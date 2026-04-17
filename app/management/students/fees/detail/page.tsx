@@ -50,7 +50,6 @@ interface StudentFullDetails {
   nationality: string | null;
   created_at: string; // Admission Date
   admission_type: string | null;
-  admission_category: string | null; // Quota
   dateofbirth: string | null;
   gender: string | null;
   student_mobile_no: string | null;
@@ -396,7 +395,7 @@ function StudentFeeDetailPage() {
           .select(`
             id, fullname, father_name, mother_name, father_email, mother_email,
             correspondence_details, permanent_details, nationality, created_at, 
-            admission_type, admission_category, dateofbirth, roll_number,
+            admission_type, dateofbirth, roll_number,
             gender, student_mobile_no, father_mobile_no, mother_mobile_no, email,
             photo_path,
             scholarship_categories(name)
@@ -603,7 +602,7 @@ function StudentFeeDetailPage() {
                   <InfoItem label="Mother's Name" value={student.mother_name} />
                   <InfoItem label="Mother's Mobile" value={student.mother_mobile_no} />
                   <InfoItem label="Mother's Email" value={student.mother_email} />
-                  <InfoItem label="Quota/Category" value={student.scholarship_categories?.name || student.admission_category} />
+                  <InfoItem label="Scholarship Strategy" value={student.scholarship_categories?.name} />
                 </div>
               </div>
 

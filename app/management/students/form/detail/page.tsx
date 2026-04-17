@@ -106,7 +106,6 @@ interface StudentDetail {
     middlename: string | null
     fullname: string | null
     admission_year: string | null
-    admission_category: string | null
     admission_type: string | null
     father_name: string | null
     mother_name: string | null
@@ -129,9 +128,6 @@ interface StudentDetail {
     father_mobile_no: string | null
     mother_mobile_no: string | null
     photo_path: string | null
-    quota_selection: string | null
-    discipline: string | null
-    branch_preferences: string | null
     how_did_you_know: string | null
     form_no: string | null
     registration_no: string | null
@@ -141,6 +137,9 @@ interface StudentDetail {
     is_verifiedby_admin: boolean;
     is_verifiedby_examcell: boolean;
     scholarship_categories: { name: string } | null;
+    courses: { name: string } | null;
+    year_category: { name: string } | null;
+    semesters: { name: string } | null;
 
     // From student_semesters
     enrollment_id: number // student_semesters.id (bigint)
@@ -156,6 +155,9 @@ interface StudentDetail {
         name: string; // academic_year_name (e.g., 'First Year')
         course_id: string;
         session: string; // academic_year_session (e.g., '2024-2025')
+        year_category_id: string | null;
+        scholarship_category_id: string | null;
+        scholarship_amount_id: string | null;
         total_fee: number | null;
         net_payable_fee: number | null;
     } | null;
@@ -404,6 +406,7 @@ function StudentDetailContent() {
     const [error, setError] = useState<string | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false) // 🚀 PDF Loading
+    const [activeEditTab, setActiveEditTab] = useState("personal") // 🚀 Control current tab
 
     // --- Data State ---
     const [studentData, setStudentData] = useState<StudentDetail | null>(null)
@@ -497,10 +500,10 @@ function StudentDetailContent() {
                 setAllSemesters(fetchedSemesters);
                 setAllCategories(scholarshipCategories.data || []);
 
-                // 2. Fetch Student Data
+                // 2. Fetch Student Data (with JOINs for descriptive names)
                 const { data: studentD, error: studentError } = await supabase
                     .from("students")
-                    .select("*, scholarship_categories(name)")
+                    .select("*, scholarship_categories(name), courses(name), year_category(name), semesters(name)")
                     .eq("id", studentId)
                     .single()
                 if (studentError) throw new Error(`Failed to fetch student: ${studentError.message}`);
@@ -542,18 +545,31 @@ function StudentDetailContent() {
                     ...(latestSem || {}), 
                     id: studentD.id,
                     enrollment_id: latestSem?.id || null, 
+                    semester_id: latestSem?.semester_id || studentD.current_sem_id || null,
                     "rollNumber": studentD.roll_number,
                     
-                    student_academic_year_id: academicYearUUID, 
+                    student_academic_year_id: academicYearUUID || studentD.admission_year_id || null, 
                     
                     academic_year_data: latestAY ? {
                         id: latestAY.id.toString(),
                         name: latestAY.academic_year_name,
                         course_id: latestAY.course_id,
                         session: latestAY.academic_year_session,
+                        year_category_id: latestAY.year_category_id,
+                        scholarship_category_id: latestAY.scholarship_category_id,
+                        scholarship_amount_id: latestAY.scholarship_amount_id,
                         total_fee: latestAY.total_fee,
                         net_payable_fee: latestAY.net_payable_fee,
-                    } : null,
+                    } : (studentD.course_id ? {
+                        id: "",
+                        name: studentD.year_category?.name || "",
+                        course_id: studentD.course_id,
+                        session: studentD.admission_year || "",
+                        scholarship_category_id: studentD.scholarship_category_id || "",
+                        scholarship_amount_id: null, // Would need fee calc lookup
+                        total_fee: 0,
+                        net_payable_fee: 0,
+                    } : null),
                 } as StudentDetail;
 
                 setStudentData(mergedData)
@@ -768,13 +784,14 @@ function StudentDetailContent() {
                 merit_no: editFormData.merit_no,
                 admission_year: editFormData.admission_year,
                 admission_type: editFormData.admission_type,
-                admission_category: editFormData.admission_category,
                 category_type: editFormData.category_type,
-                quota_selection: editFormData.quota_selection,
-                discipline: editFormData.discipline,
-                branch_preferences: editFormData.branch_preferences,
                 how_did_you_know: editFormData.how_did_you_know,
                 roll_number: editFormData["rollNumber"],
+                
+                // Enrollment Sync
+                course_id: editFormData.academic_year_data?.course_id,
+                admission_year_id: editFormData.student_academic_year_id,
+                current_sem_id: editFormData.semester_id,
             };
             
             // Only 'status' is editable for the semester
@@ -790,6 +807,9 @@ function StudentDetailContent() {
                 const ayUpdateData = {
                     academic_year_session: editFormData.session,
                     academic_year_name: allAcademicYears.find(ay => ay.id === editFormData.student_academic_year_id)?.name,
+                    year_category_id: editFormData.academic_year_data?.year_category_id, // Preserve or update session ID
+                    scholarship_category_id: editFormData.academic_year_data?.scholarship_category_id,
+                    scholarship_amount_id: editFormData.academic_year_data?.scholarship_amount_id,
                     course_id: editFormData.academic_year_data?.course_id
                 };
 
@@ -1021,9 +1041,8 @@ function StudentDetailContent() {
             ["Merit No.", student.merit_no],
             ["Admission Year", student.admission_year],
             ["Admission Type", student.admission_type],
-            ["Admission Category", student.scholarship_categories?.name || student.admission_category],
+            ["Admission Type", student.admission_type],
             ["Category Type", student.category_type],
-            ["Quota Selection", student.quota_selection],
         ]);
 
         // --- 10. Additional Information ---
@@ -1040,9 +1059,10 @@ function StudentDetailContent() {
     // --- Content Renderers ---
 
     const renderViewContent = (student: StudentDetail) => {
-        const courseName = allCourses.find(c => c.id === student.academic_year_data?.course_id)?.name || "N/A";
-        const academicYearName = allAcademicYears.find(ay => ay.id === student.student_academic_year_id)?.name || "N/A";
-        const semesterName = allSemesters.find(s => s.id === student.semester_id)?.name || "N/A";
+        const courseName = student.courses?.name || allCourses.find(c => c.id === (student.academic_year_data?.course_id || student.course_id))?.name || "N/A";
+        const linkedAYIdFromSem = allSemesters.find(s => s.id === (student.semester_id || student.current_sem_id))?.academic_year_id;
+        const academicYearName = student.year_category?.name || allAcademicYears.find(ay => ay.id === (student.student_academic_year_id || student.admission_year_id || linkedAYIdFromSem))?.name || "N/A";
+        const semesterName = student.semesters?.name || allSemesters.find(s => s.id === (student.semester_id || student.current_sem_id))?.name || "N/A";
 
         const getStatusVariant = (status: string | null) => {
             if (!status) return 'secondary';
@@ -1131,9 +1151,8 @@ function StudentDetailContent() {
                             <DetailItem label="Merit No." value={student.merit_no} />
                             <DetailItem label="Admission Year" value={student.admission_year} />
                             <DetailItem label="Admission Type" value={student.admission_type} />
-                            <DetailItem label="Admission Category" value={student.scholarship_categories?.name || student.admission_category} />
+                            <DetailItem label="Admission Type" value={student.admission_type} />
                             <DetailItem label="Category Type" value={student.category_type} />
-                            <DetailItem label="Quota Selection" value={student.quota_selection} />
                         </AccordionContent>
                     </AccordionItem>
 
@@ -1185,12 +1204,12 @@ function StudentDetailContent() {
 
     const renderEditForm = () => (
         <form onSubmit={handleEditSubmit}>
-            <Tabs defaultValue="personal" className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="personal">Personal</TabsTrigger>
-                    <TabsTrigger value="admission">Enrollment</TabsTrigger>
-                    <TabsTrigger value="application">Application</TabsTrigger>
-                    <TabsTrigger value="docs">Docs & Custom</TabsTrigger>
+            <Tabs value={activeEditTab} onValueChange={setActiveEditTab} className="w-full">
+                <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1 mb-4 bg-muted/50 rounded-lg">
+                    <TabsTrigger value="personal" className="flex-1 text-[10px] sm:text-sm py-2">Personal</TabsTrigger>
+                    <TabsTrigger value="admission" className="flex-1 text-[10px] sm:text-sm py-2">Enrollment</TabsTrigger>
+                    <TabsTrigger value="application" className="flex-1 text-[10px] sm:text-sm py-2">Application</TabsTrigger>
+                    <TabsTrigger value="docs" className="flex-1 text-[10px] sm:text-sm py-2">Documents</TabsTrigger>
                 </TabsList>
 
                 {/* Personal & Parent Tab */}
@@ -1258,6 +1277,18 @@ function StudentDetailContent() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
+                        <p className="text-[10px] sm:text-xs text-muted-foreground w-full sm:w-auto text-center sm:text-left">Ensure all personal details are correct.</p>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                             <Button type="submit" variant="secondary" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
+                                <Save className="h-3 w-3 mr-2" /> Update
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => setActiveEditTab("admission")} className="flex-1 sm:flex-none">
+                                Next <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                        </div>
+                    </div>
                 </TabsContent>
 
                 {/* Enrollment & Address Tab */}
@@ -1293,7 +1324,18 @@ function StudentDetailContent() {
                                 <FormSearchableSelectGroup
                                     label="Semester"
                                     value={editFormData.semester_id ?? null}
-                                    onChange={(val) => handleEditSelectChange("semester_id", val || "")}
+                                    onChange={(val) => {
+                                        handleEditSelectChange("semester_id", val || "");
+                                        if (val) {
+                                            const selectedSem = allSemesters.find(s => s.id === val);
+                                            if (selectedSem?.academic_year_id) {
+                                                setEditFormData(prev => ({ 
+                                                    ...prev, 
+                                                    student_academic_year_id: selectedSem.academic_year_id 
+                                                }));
+                                            }
+                                        }
+                                    }}
                                     options={editModalSemesterOptions}
                                     placeholder="Select semester"
                                     required
@@ -1340,6 +1382,20 @@ function StudentDetailContent() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("personal")} className="w-full sm:w-auto order-2 sm:order-1">
+                           <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
+                             <Button type="submit" variant="secondary" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
+                                <Save className="h-3 w-3 mr-2" /> Update
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => setActiveEditTab("application")} className="flex-1 sm:flex-none">
+                                Next <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                        </div>
+                    </div>
                 </TabsContent>
 
                 {/* Application & Category Tab */}
@@ -1353,7 +1409,6 @@ function StudentDetailContent() {
                                 <FormInputGroup label="Merit No." name="merit_no" value={editFormData.merit_no || ""} onChange={handleEditChange} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormInputGroup label="Quota Selection" name="quota_selection" value={editFormData.quota_selection || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Admission Type" name="admission_type" value={editFormData.admission_type || ""} onChange={handleEditChange} />
                             </div>
                         </CardContent>
@@ -1363,17 +1418,24 @@ function StudentDetailContent() {
                         <CardHeader><CardTitle>Category Details</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormSearchableSelectGroup
-                                    label="Admission Category (Quota)"
-                                    value={editFormData.admission_category ?? null}
-                                    onChange={(val) => handleEditSelectChange("admission_category", val || "")}
-                                    options={allCategories.map(c => ({ label: c.name, value: c.id }))}
-                                    placeholder="Select category"
-                                />
                                 <FormInputGroup label="Category Type" name="category_type" value={editFormData.category_type || ""} onChange={handleEditChange} />
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("admission")} className="w-full sm:w-auto order-2 sm:order-1">
+                           <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
+                             <Button type="submit" variant="secondary" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
+                                <Save className="h-3 w-3 mr-2" /> Update
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => setActiveEditTab("docs")} className="flex-1 sm:flex-none">
+                                Next <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                        </div>
+                    </div>
                 </TabsContent>
 
                 {/* Documents & Custom Fields Tab */}
@@ -1502,6 +1564,17 @@ function StudentDetailContent() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("application")} className="w-full sm:w-auto order-2 sm:order-1">
+                           <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
+                             <Button type="submit" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
+                                <Save className="h-3 w-3 mr-2" /> Finish & Save
+                            </Button>
+                        </div>
+                    </div>
                 </TabsContent>
             </Tabs>
 
@@ -1592,47 +1665,49 @@ function StudentDetailContent() {
 
     return (
         <div className="p-4 md:p-8 space-y-6">
-            <div className="flex justify-between items-center border-b pb-4">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 gap-4">
+                <div className="w-full sm:w-auto">
+                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
                         {studentData.fullname || 'Student'}
                     </h1>
-                    <p className="text-lg text-muted-foreground">
+                    <p className="text-base md:text-lg text-muted-foreground">
                         Roll No: **{studentData['rollNumber']}** | ID: {studentData.id}
                     </p>
                     {student_status_badges}
                 </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => router.push('/management/students')}>
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <Button variant="outline" size="sm" onClick={() => router.push('/management/students')} className="flex-1 sm:flex-none">
                         <ChevronLeft className="h-4 w-4 mr-2" />
-                        Back to List
+                        Back
                     </Button>
                     
                     {/* 🚀 PDF Download Button 🚀 */}
                     {mode === 'view' && (
-                        <Button variant="outline" onClick={prepareAndDownloadPDF} disabled={isGeneratingPDF}>
+                        <Button variant="outline" size="sm" onClick={prepareAndDownloadPDF} disabled={isGeneratingPDF} className="flex-1 sm:flex-none">
                             {isGeneratingPDF ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                             ) : (
                                 <Download className="h-4 w-4 mr-2" />
                             )}
-                            Download PDF
+                            PDF
                         </Button>
                     )}
 
                     {mode === 'view' ? (
                         <Button 
+                            size="sm"
                             onClick={() => setMode('edit')}
                             disabled={studentData.is_locked}
                             title={studentData.is_locked ? "Profile is locked by admin" : ""}
+                            className="flex-1 sm:flex-none"
                         >
                             <Edit className="h-4 w-4 mr-2" />
-                            Edit Enrollment
+                            Edit
                         </Button>
                     ) : (
-                        <Button variant="secondary" onClick={() => setMode('view')}>
+                        <Button variant="secondary" size="sm" onClick={() => setMode('view')} className="flex-1 sm:flex-none">
                             <Eye className="h-4 w-4 mr-2" />
-                            View Mode
+                            View
                         </Button>
                     )}
                 </div>

@@ -109,7 +109,7 @@ export default function ProfilePage() {
     : null
   
   const firstName      = student.fullname?.split(" ")[0] || "Student"
-  const courseName     = student.courses?.name || student.discipline || "Tech"
+  const courseName     = student.courses?.name || "Tech"
   const studentId      = student.registration_no || student.roll_number || "CE042"
   const ar             = student.academic_records || {}
 

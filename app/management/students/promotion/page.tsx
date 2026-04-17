@@ -66,7 +66,7 @@ interface StudentAcademicYearWithSemesters extends Omit<StudentAcademicYear, 'st
   scholarship_amount: number | null;
   net_payable_fee: number | null;
 }
-interface StudentAcademicYear { id: string; student_id: string; course_id: string; academic_year_name: string; academic_year_session: string; status: string; year_category_id: string | null; }
+interface StudentAcademicYear { id: string; student_id: string; course_id: string; academic_year_name: string; academic_year_session: string; status: string; year_category_id: string | null; scholarship_category_id: string | null; scholarship_amount_id: string | null; }
 interface StudentSemester { id: string; student_id: string; semester_id: string; student_academic_year_id: string; status: string; promotion_status: string; }
 
 interface PromotionTarget {
@@ -291,7 +291,9 @@ function StudentPromotionContent() {
           student_semesters (
             *,
             semesters ( name )
-          )
+          ),
+          scholarship_category_id,
+          scholarship_amount_id
         `)
         .eq("student_id", id)
         .order("academic_year_name", { ascending: true, nullsFirst: false });
@@ -453,13 +455,14 @@ function StudentPromotionContent() {
         
         const { data: feeData, error: feeError } = await supabase
           .from("course_fees")
-          .select("category_name, amount")
-          .eq("course_id", active_enrollment.course_id);
+          .select("amount")
+          .eq("course_id", active_enrollment.course_id)
+          .eq("academic_year_id", promotionTarget.targetAcademicYearId)
+          .is("admission_category_id", null)
+          .maybeSingle();
           
         if (feeError) throw new Error(`Fee Fetch Error: ${feeError.message}`);
-        
-        // Find the 'Open' category fee for the new course or default to current year's total fee
-        const openFee = feeData?.find((f: { category_name: string, amount: number }) => f.category_name === 'Open')?.amount || currentAcademicYear.total_fee || 0;
+        const openFee = feeData?.amount || currentAcademicYear.total_fee || 0;
         
         const newAcademicYearRecord = {
           student_id: active_enrollment.student_id,
@@ -471,6 +474,8 @@ function StudentPromotionContent() {
           total_fee: openFee,
           scholarship_name: currentAcademicYear.scholarship_name,
           scholarship_amount: currentAcademicYear.scholarship_amount,
+          scholarship_category_id: currentAcademicYear.scholarship_category_id,
+          scholarship_amount_id: currentAcademicYear.scholarship_amount_id, 
           net_payable_fee: (openFee) - (currentAcademicYear.scholarship_amount || 0),
         };
         
@@ -562,11 +567,15 @@ function StudentPromotionContent() {
       
       const { data: feeData, error: feeError } = await supabase
         .from("course_fees")
-        .select("category_name, amount")
-        .eq("course_id", transferCourseId);
+        .select("amount")
+        .eq("course_id", transferCourseId)
+        .eq("academic_year_id", transferAcademicYearId)
+        .is("admission_category_id", null)
+        .maybeSingle();
+
       if (feeError) throw new Error(`Fee Fetch Error: ${feeError.message}`);
       
-      const openFee = feeData?.find((f: { category_name: string, amount: number }) => f.category_name === 'Open')?.amount || 0;
+      const openFee = feeData?.amount || 0;
 
       const { data: newYearData, error: yearInsertError } = await supabase
         .from("student_academic_years")
@@ -580,6 +589,8 @@ function StudentPromotionContent() {
           total_fee: openFee,
           scholarship_name: currentAcademicYear.scholarship_name,
           scholarship_amount: currentAcademicYear.scholarship_amount,
+          scholarship_category_id: currentAcademicYear.scholarship_category_id,
+          scholarship_amount_id: currentAcademicYear.scholarship_amount_id,
           net_payable_fee: (openFee) - (currentAcademicYear.scholarship_amount || 0),
         })
         .select('id')

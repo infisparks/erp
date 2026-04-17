@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 
 // --- Icons ---
 import { ChevronRight, Loader2, AlertTriangle, Save, GraduationCap, IndianRupee, Info, Calendar } from "lucide-react"
@@ -44,6 +45,18 @@ interface YearCategory {
   name: string
 }
 
+interface Stream {
+  id: string
+  name: string
+}
+
+interface MasterData {
+  id: string
+  type: string
+  value: string
+  label: string
+}
+
 /**
  * Main Financial Management Page
  * Handles Course Fees (per Year Category) and Scholarships (per Category)
@@ -51,16 +64,20 @@ interface YearCategory {
 export default function FeeStructurePage() {
   // --- Data State ---
   const [courses, setCourses] = useState<Course[]>([])
+  const [streams, setStreams] = useState<Stream[]>([])
   const [scholarshipCategories, setScholarshipCategories] = useState<ScholarshipCategory[]>([])
   const [yearCategories, setYearCategories] = useState<YearCategory[]>([])
+  const [admissionCategories, setAdmissionCategories] = useState<MasterData[]>([])
   
   // --- Selection & Edit State ---
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
+  const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("fees")
 
-  // Fees State (Stored per Year Category ID)
-  const [currentFees, setCurrentFees] = useState<Record<string, number>>({})
-  const [editFees, setEditFees] = useState<Record<string, number>>({})
+  // Fees State (Stored per Year Category ID and Admission Category ID)
+  // Structured as: { [yearId]: { [admissionCategoryId]: amount } }
+  const [currentFees, setCurrentFees] = useState<Record<string, Record<string, number>>>({})
+  const [editFees, setEditFees] = useState<Record<string, Record<string, number>>>({})
 
   // Scholarships State (Calculated amount given to student per Category)
   const [currentScholarships, setCurrentScholarships] = useState<Record<string, { amount: number; description: string }>>({})
@@ -82,19 +99,27 @@ export default function FeeStructurePage() {
     const init = async () => {
       setLoadingInitial(true)
       try {
-        const [cRes, catRes, yearRes] = await Promise.all([
+        const [cRes, sRes, catRes, yearRes] = await Promise.all([
           supabase.from("courses").select("*").order("name"),
+          supabase.from("streams").select("*").order("name"),
           supabase.from("scholarship_categories").select("*").order("name"),
           supabase.from("year_category").select("*").order("name")
         ])
 
         if (cRes.error) throw cRes.error
+        if (sRes.error) throw sRes.error
         if (catRes.error) throw catRes.error
         if (yearRes.error) throw yearRes.error
 
         setCourses(cRes.data || [])
+        setStreams(sRes.data || [])
         setScholarshipCategories(catRes.data || [])
         setYearCategories(yearRes.data || [])
+        
+        // Auto-expand first stream if available
+        if (sRes.data && sRes.data.length > 0) {
+          setExpandedStreamId(sRes.data[0].id)
+        }
       } catch (err: any) {
         setError(err.message || "Failed to initialize financial setup.")
       } finally {
@@ -130,7 +155,7 @@ export default function FeeStructurePage() {
         if (feesRes.error) throw feesRes.error
         if (schRes.error) throw schRes.error
 
-        // Map Fees (Key: Academic Year ID)
+        // Map Fees (Key: Year ID -> Amount)
         const feeMap = (feesRes.data || []).reduce((acc: any, fee: any) => {
           acc[fee.academic_year_id] = fee.amount
           return acc
@@ -178,7 +203,7 @@ export default function FeeStructurePage() {
     setSuccess(null)
     setEditFees(prev => ({
       ...prev,
-      [yearId]: value ?? 0,
+      [yearId]: value ?? 0
     }))
   }
 
@@ -201,13 +226,16 @@ export default function FeeStructurePage() {
       const upsertArray = Object.entries(editFees).map(([yearId, amount]) => ({
         course_id: selectedCourse.id,
         academic_year_id: yearId,
+        admission_category_id: null, // No longer using category-wise fees
         amount,
       }))
-      const { error } = await supabase.from("course_fees").upsert(upsertArray, { onConflict: 'course_id, academic_year_id' })
+
+      const { error } = await supabase.from("course_fees").upsert(upsertArray, { onConflict: 'course_id, academic_year_id, admission_category_id' })
       if (error) throw error
+      
       setCurrentFees(prev => ({ ...prev, ...editFees }))
       setEditFees({})
-      setSuccess("Annual course fees updated successfully!")
+      setSuccess("Admission fees updated successfully!")
     } catch (err: any) {
       setError(err.message || "Failed to save fees.")
     } finally {
@@ -262,26 +290,57 @@ export default function FeeStructurePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* --- Column 1: Course Selection --- */}
-        <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-5 border-b border-slate-100 flex items-center gap-3">
+        {/* --- Column 1: Stream & Course Selection --- */}
+        <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-[75vh]">
+          <div className="px-5 py-5 border-b border-slate-100 flex items-center gap-3 shrink-0">
             <div className="h-9 w-9 bg-emerald-50 rounded-xl flex items-center justify-center">
               <GraduationCap className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <h2 className="font-bold text-slate-800 text-sm">Select Course</h2>
-              <p className="text-[10px] text-slate-400">{courses.length} courses available</p>
+              <h2 className="font-bold text-slate-800 text-sm">Departments</h2>
+              <p className="text-[10px] text-slate-400">{streams.length} Streams • {courses.length} Courses</p>
             </div>
           </div>
-          <div className="p-3 space-y-1 max-h-[70vh] overflow-y-auto">
-            {courses.map(course => (
-              <ListItem
-                key={course.id}
-                name={course.name}
-                isActive={selectedCourse?.id === course.id}
-                onClick={() => setSelectedCourse(course)}
-              />
-            ))}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {streams.map(stream => {
+              const streamCourses = courses.filter(c => c.stream_id === stream.id)
+              const isExpanded = expandedStreamId === stream.id
+              
+              return (
+                <div key={stream.id} className="space-y-1">
+                  <button 
+                    onClick={() => setExpandedStreamId(isExpanded ? null : stream.id)}
+                    className={`w-full px-4 py-4 rounded-2xl flex items-center justify-between transition-all font-black text-[11px] uppercase tracking-[.15em] shadow-sm
+                      ${isExpanded ? 'bg-[#0F1923] text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                       <div className={`h-2 w-2 rounded-full ${isExpanded ? 'bg-emerald-400 animate-pulse' : 'bg-slate-300'}`} />
+                       <span>{stream.name}</span>
+                    </div>
+                    <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90 text-emerald-400' : 'text-slate-300'}`} />
+                  </button>
+                  
+                  {isExpanded && (
+                    <div className="pl-3 pr-1 py-2 space-y-1.5 animate-in slide-in-from-top-4 duration-500">
+                      {streamCourses.length > 0 ? (
+                        streamCourses.map(course => (
+                          <ListItem
+                            key={course.id}
+                            name={course.name}
+                            isActive={selectedCourse?.id === course.id}
+                            onClick={() => setSelectedCourse(course)}
+                          />
+                        ))
+                      ) : (
+                        <div className="px-6 py-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center italic">No Registry Found</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -359,25 +418,43 @@ export default function FeeStructurePage() {
                              + Add Year
                            </button>
                         </div>
-                        <div className="grid grid-cols-1 gap-4">
+                        <div className="space-y-8">
                           {yearCategories.map(year => {
-                            const value = editFees[year.id] ?? currentFees[year.id] ?? 0;
                             return (
-                              <div key={year.id} className="group flex flex-col sm:flex-row sm:items-center sm:justify-between p-6 border border-slate-100 rounded-3xl bg-slate-50/50 hover:bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 gap-6">
-                                <div className="space-y-1">
-                                  <Label className="font-black text-slate-900 block text-lg group-hover:text-blue-700 transition-colors">
-                                    {year.name}
-                                  </Label>
-                                  <span className="text-sm text-slate-400 font-bold">Standard tuition for this Year Category</span>
+                              <div key={year.id} className="p-8 border border-slate-100 rounded-[32px] bg-slate-50/30 space-y-6">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+                                      <Calendar className="h-5 w-5 text-white" />
+                                    </div>
+                                    <div>
+                                      <h3 className="font-black text-slate-900 text-xl">{year.name}</h3>
+                                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Fees structure for admission session</p>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="relative">
-                                  <InputNumber
-                                    value={value}
-                                    onValueChange={(e) => handleFeeChange(year.id, e.value)}
-                                    mode="decimal"
-                                    prefix="₹ "
-                                    inputClassName="w-full sm:w-56 text-right font-black text-slate-900 bg-white border border-slate-200 rounded-2xl p-4 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-xl"
-                                  />
+
+                                <div className="max-w-md mx-auto">
+                                  <div className="group p-6 bg-white border border-slate-100 rounded-3xl hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-50/50 transition-all duration-300">
+                                    <div className="flex items-center justify-between mb-4">
+                                      <Label className="font-black text-slate-700 text-lg group-hover:text-emerald-700 transition-colors">
+                                        Admission Fee (Lump Sum)
+                                      </Label>
+                                      <div className="h-8 w-8 bg-emerald-50 rounded-lg flex items-center justify-center">
+                                        <IndianRupee size={14} className="text-emerald-600" />
+                                      </div>
+                                    </div>
+                                    <div className="relative">
+                                      <InputNumber
+                                        value={editFees[year.id] ?? currentFees[year.id] ?? 0}
+                                        onValueChange={(e) => handleFeeChange(year.id, e.value)}
+                                        mode="decimal"
+                                        prefix="₹ "
+                                        inputClassName="w-full text-right font-black text-slate-900 bg-slate-50 border-none rounded-2xl p-5 focus:ring-4 focus:ring-emerald-100 outline-none transition-all text-2xl"
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4 text-center">Standard course fee for this session</p>
+                                  </div>
                                 </div>
                               </div>
                             )

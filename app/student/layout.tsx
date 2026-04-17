@@ -35,7 +35,7 @@ export default function StudentLayout({
         return
       }
 
-      const { type, role, isApproved } = await getUserType(supabase, session.user.id)
+      const { type, role, isApproved, studentVerification } = await getUserType(supabase, session.user.id)
 
       if (type === 'management') {
          if (!isApproved) {
@@ -45,6 +45,29 @@ export default function StudentLayout({
             router.push(role === 'admin' ? "/management/admin/dashboard" : "/management/staff/dashboard")
          }
          return
+      }
+
+      // Student Verification Logic
+      if (type === 'student') {
+        const isAdminVerified = studentVerification?.admin
+        const isFullyVerified = studentVerification?.accountant && studentVerification?.examcell
+
+        // 1. Admin Verification Pending -> Force Admission/Registration Form
+        if (!isAdminVerified) {
+          if (pathname !== "/student/admission" && pathname !== "/student/login") {
+            router.push("/student/admission")
+            return
+          }
+        } 
+        
+        // 2. Admin Verified but Accountant or Examcell Pending -> Force Dashboard Only
+        else if (!isFullyVerified) {
+          const allowedDashboardRoutes = ["/student/dashboard", "/student/admission"] // Admission handles its own redirect if verified
+          if (!allowedDashboardRoutes.includes(pathname)) {
+            router.push("/student/dashboard")
+            return
+          }
+        }
       }
 
       setIsVerifying(false)

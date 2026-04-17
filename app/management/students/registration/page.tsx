@@ -62,6 +62,8 @@ interface ActiveEnrollment {
   scholarship_amount: number | null
   net_payable_fee: number | null
   year_category_id: string | null
+  scholarship_category_id: string | null
+  scholarship_amount_id: string | null
 }
 
 interface Subject {
@@ -104,14 +106,9 @@ function StudentRegistrationPage() {
   const [availableScholarships, setAvailableScholarships] = useState<
     CategoryOption[]
   >([])
-  const [scholarshipMap, setScholarshipMap] = useState<Map<string, number>>(new Map())
+  const [scholarshipMap, setScholarshipMap] = useState<Map<string, { amount: number, categoryId: string, amountId: string }>>(new Map())
   const [selectedScholarshipName, setSelectedScholarshipName] = useState("")
 
-  // --- NEW: State for Payment Plan ---
-  const [paymentPlan, setPaymentPlan] = useState<"One Time" | "Installment">(
-    "One Time",
-  )
-  const [undertakingFile, setUndertakingFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   // ------------------------------------
 
@@ -125,25 +122,23 @@ function StudentRegistrationPage() {
   }
 
   // Calculate new fees dynamically
-  const { newPayableAmount, newScholarshipAmount } = useMemo(() => {
+  const { newPayableAmount, newScholarshipAmount, selectedCategoryId, selectedAmountId } = useMemo(() => {
     // With uniform fees, base is always the course fee for that batch
     const total_fee = data?.enrollment?.total_fee || 0
-    const sch_benefit = scholarshipMap.get(selectedScholarshipName) || 0
+    const schInfo = scholarshipMap.get(selectedScholarshipName)
+    const sch_benefit = schInfo?.amount || 0
     const payable = total_fee - sch_benefit
-    return { newPayableAmount: Math.max(0, payable), newScholarshipAmount: sch_benefit }
+    return { 
+      newPayableAmount: Math.max(0, payable), 
+      newScholarshipAmount: sch_benefit,
+      selectedCategoryId: schInfo?.categoryId || null,
+      selectedAmountId: schInfo?.amountId || null
+    }
   }, [selectedScholarshipName, scholarshipMap, data?.enrollment?.total_fee])
 
   // --- NEW: File change handler ---
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // You can add file type/size validation here if needed
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast.error("File is too large. Max 5MB allowed.")
-        return
-      }
-      setUndertakingFile(file)
-    }
+    // Removed
   }
 
   useEffect(() => {
@@ -173,7 +168,7 @@ function StudentRegistrationPage() {
         const { data: activeYearData, error: activeYearError } = await supabase
           .from("student_academic_years")
           .select(
-            "id, course_id, academic_year_name, courses(name), total_fee, scholarship_name, scholarship_amount, net_payable_fee, payment_plan, year_category_id", // Added payment_plan & year_category_id
+            "id, course_id, academic_year_name, courses(name), total_fee, scholarship_name, scholarship_amount, net_payable_fee, year_category_id, scholarship_category_id, scholarship_amount_id", // Added IDs
           )
           .eq("student_id", student_id)
           .eq("status", "Active")
@@ -234,13 +229,13 @@ function StudentRegistrationPage() {
         // 5.5 Fetch scholarship amounts (benefit values)
         const { data: schAmts, error: schAmtsError } = await supabase
           .from("scholarship_amounts")
-          .select("category_id, amount, scholarship_categories(name)")
+          .select("id, category_id, amount, scholarship_categories(name)")
           .eq("course_id", courseId)
 
-        const sMap = new Map<string, number>()
+        const sMap = new Map<string, { amount: number, categoryId: string, amountId: string }>()
         schAmts?.forEach((s: any) => {
           const name = s.scholarship_categories?.name
-          if (name) sMap.set(name, s.amount)
+          if (name) sMap.set(name, { amount: s.amount, categoryId: s.category_id, amountId: s.id })
         })
         setScholarshipMap(sMap)
 
@@ -277,6 +272,8 @@ function StudentRegistrationPage() {
             scholarship_amount: activeYearData.scholarship_amount,
             net_payable_fee: activeYearData.net_payable_fee,
             year_category_id: activeYearData.year_category_id,
+            scholarship_category_id: activeYearData.scholarship_category_id,
+            scholarship_amount_id: activeYearData.scholarship_amount_id,
           },
           subjects: subjectsData || [],
           studentAcademicYearId: studentAcademicYearId,
@@ -288,9 +285,8 @@ function StudentRegistrationPage() {
         )
         setSelectedSubjects(compulsorySubjects.map((s: { id: any }) => s.id))
 
-        // 9. Set scholarship and payment plan
+        // 9. Set scholarship
         setSelectedScholarshipName(activeYearData.scholarship_name || "")
-        setPaymentPlan(activeYearData.payment_plan === "Installment" ? "Installment" : "One Time")
 
       } catch (err: any) {
         console.error("Error fetching registration data:", err)
@@ -312,10 +308,8 @@ function StudentRegistrationPage() {
   // --- NEW: Validation for submit button ---
   const isSubmitDisabled = useMemo(() => {
     if (submitting || loading || selectedSubjects.length === 0) return true
-    // Disable if they chose installment but haven't selected a file
-    if (paymentPlan === "Installment" && !undertakingFile) return true
     return false
-  }, [submitting, loading, selectedSubjects, paymentPlan, undertakingFile])
+  }, [submitting, loading, selectedSubjects])
   // -------------------------------------
 
   const handleSubmitRegistration = async () => {
@@ -334,37 +328,15 @@ function StudentRegistrationPage() {
     }
 
     // --- NEW: File Validation ---
-    if (paymentPlan === "Installment" && !undertakingFile) {
-      setError("Please upload the installment undertaking form to proceed.")
-      return
-    }
-    // ----------------------------
+    // Removed
 
     setSubmitting(true)
     setIsUploading(true)
     setError(null)
 
-    let uploadedFilePath: string | null = null
-
     try {
       // --- NEW: File Upload Logic ---
-      if (paymentPlan === "Installment" && undertakingFile) {
-        const fileExt = undertakingFile.name.split(".").pop()
-        const fileName = `undertaking_${data.student.id}_${Date.now()}.${fileExt}`
-        const filePath = `student_undertakings/${data.student.id}/${fileName}`
-
-        const { data: uploadData, error: uploadError } =
-          await supabase.storage
-            .from("student_documents") // Assuming this is your documents bucket
-            .upload(filePath, undertakingFile)
-
-        if (uploadError) {
-          throw new Error(
-            `Failed to upload undertaking form: ${uploadError.message}`,
-          )
-        }
-        uploadedFilePath = uploadData.path
-      }
+      // Removed
       setIsUploading(false)
       // ----------------------------
 
@@ -386,19 +358,19 @@ function StudentRegistrationPage() {
         registration_data: any
         scholarship_name?: string
         scholarship_amount?: number
+        scholarship_category_id?: string | null
+        scholarship_amount_id?: string | null
         net_payable_fee?: number
-        payment_plan: string // NEW
-        installment_undertaking_path?: string | null // NEW
       } = {
         is_registered: true,
         registration_data: registrationPayload,
-        payment_plan: paymentPlan,
-        installment_undertaking_path: uploadedFilePath,
       }
 
       if (isEditingScholarship) {
         updatePayload.scholarship_name = selectedScholarshipName
         updatePayload.scholarship_amount = newScholarshipAmount
+        updatePayload.scholarship_category_id = selectedCategoryId
+        updatePayload.scholarship_amount_id = selectedAmountId
         updatePayload.net_payable_fee = newPayableAmount
       }
       // -------------------------------------------
@@ -637,62 +609,6 @@ function StudentRegistrationPage() {
                   </Alert>
                 </div>
               )}
-
-              {/* --- NEW: Payment Plan Section --- */}
-              <div className="space-y-4 pt-4 border-t">
-                <Label className="text-base font-semibold">Payment Plan</Label>
-                <RadioGroup
-                  value={paymentPlan}
-                  onValueChange={(value: "One Time" | "Installment") =>
-                    setPaymentPlan(value)
-                  }
-                  className="flex gap-6"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="One Time" id="r-one-time" />
-                    <Label htmlFor="r-one-time">One Time Payment</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="Installment" id="r-installment" />
-                    <Label htmlFor="r-installment">Installment Plan</Label>
-                  </div>
-                </RadioGroup>
-
-                {/* Conditional File Upload */}
-                {paymentPlan === "Installment" && (
-                  <div className="p-4 border-l-4 border-destructive bg-red-50/50 rounded-r-lg space-y-3">
-                    <Label
-                      htmlFor="undertaking-file"
-                      className="font-semibold text-destructive-foreground"
-                    >
-                      Installment Undertaking Form*
-                    </Label>
-                    <p className="text-xs text-destructive-foreground/80">
-                      Please upload the signed undertaking form (PDF, PNG, JPG). Max 5MB.
-                    </p>
-                    <Input
-                      id="undertaking-file"
-                      type="file"
-                      onChange={handleFileChange}
-                      accept=".pdf,.png,.jpg,.jpeg"
-                      className="file:text-sm file:font-medium"
-                    />
-                    {isUploading && (
-                      <div className="flex items-center text-sm text-primary">
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Uploading...
-                      </div>
-                    )}
-                    {undertakingFile && !isUploading && (
-                       <div className="flex items-center text-sm text-green-700 font-medium">
-                        <FileCheck className="h-4 w-4 mr-2" />
-                        Selected: {undertakingFile.name}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              {/* ------------------------------------- */}
             </CardContent>
           </Card>
           

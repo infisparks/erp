@@ -272,21 +272,20 @@ export default function StudentManagementPage() {
             is_verifiedby_admin,
             is_verifiedby_accountant,
             is_verifiedby_examcell,
-            discipline,
             admission_year,
+            current_sem_id,
             course:courses ( id, name ),
-            current_semester_details:semesters!current_sem_id ( 
-              id, 
-              name, 
-              academic_year:academic_years ( name ) 
+            active_semesters: student_semesters!student_semesters_student_id_fkey (
+                id,
+                semester_id,
+                status,
+                promotion_status,
+                is_verifiedby_admin,
+                is_verifiedby_accountant,
+                is_verifiedby_examcell,
+                semesters (id, name)
             ),
-            active_semesters:student_semesters (
-              id,
-              is_verifiedby_admin,
-              is_verifiedby_accountant,
-              is_verifiedby_examcell,
-              status
-            ),
+            current_semester_details: semesters!current_sem_id (id, name),
             enrollments:student_academic_years (
               id,
               academic_year_name,
@@ -344,19 +343,20 @@ export default function StudentManagementPage() {
               roll_number: item.roll_number,
               photo_path: item.photo_path,
               course_name: item.course?.name || "N/A",
-              academic_year_name: latestEnroll?.academic_year_name || item.current_semester_details?.academic_year?.name || "N/A",
+              academic_year_name: latestEnroll?.academic_year_name || activeSem?.semesters?.academic_years?.name || "N/A",
               academic_year_session: latestEnroll?.academic_year_session || (item.admission_year || "N/A"),
               // Prioritize semester verification for the verification columns
-              is_verifiedby_admin: (activeSem ? activeSem.is_verifiedby_admin : item.is_verifiedby_admin) ?? false,
-              is_verifiedby_accountant: (activeSem ? activeSem.is_verifiedby_accountant : item.is_verifiedby_accountant) ?? false,
-              is_verifiedby_examcell: (activeSem ? activeSem.is_verifiedby_examcell : item.is_verifiedby_examcell) ?? false,
+              // Show student admission status in the main columns
+              is_verifiedby_admin: item.is_verifiedby_admin ?? false,
+              is_verifiedby_accountant: item.is_verifiedby_accountant ?? false,
+              is_verifiedby_examcell: item.is_verifiedby_examcell ?? false,
               
               is_admission_verified: isAdmissionVerified,
               is_enrollment_verified: isEnrollmentVerified,
               is_registered: latestEnroll?.is_registered || !!activeSem,
               is_locked: item.is_locked ?? false,
               sequence: 0, 
-              semester_name: item.current_semester_details?.name || "N/A"
+              semester_name: item.current_semester_details?.name || activeSem?.semesters?.name || "N/A"
             }
           })
 
@@ -667,7 +667,7 @@ export default function StudentManagementPage() {
       header: "Admin",
       cell: ({ row }) => (
         <button
-          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_admin", row.original.is_verifiedby_admin, row.original.active_semester_id)}
+          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_admin", row.original.is_verifiedby_admin)}
           disabled={loading}
           className="hover:scale-105 transition-transform"
         >
@@ -690,7 +690,7 @@ export default function StudentManagementPage() {
       header: "Account",
       cell: ({ row }) => (
         <button
-          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_accountant", row.original.is_verifiedby_accountant, row.original.active_semester_id)}
+          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_accountant", row.original.is_verifiedby_accountant)}
           disabled={loading}
           className="hover:scale-105 transition-transform"
         >
@@ -713,7 +713,7 @@ export default function StudentManagementPage() {
       header: "Exam Cell",
       cell: ({ row }) => (
         <button
-          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_examcell", row.original.is_verifiedby_examcell, row.original.active_semester_id)}
+          onClick={() => toggleStatus(row.original.student_id, "is_verifiedby_examcell", row.original.is_verifiedby_examcell)}
           disabled={loading}
           className="hover:scale-105 transition-transform"
         >

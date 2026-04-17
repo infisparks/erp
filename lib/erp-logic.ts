@@ -17,13 +17,15 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
         scholarshipRes,
         coursesRes,
         semestersRes,
-        academicYearsRes
+        academicYearsRes,
+        masterDataRes
     ] = await Promise.all([
         supabase.from('streams').select('id, name').order('name'),
         supabase.from('year_category').select('id, name').order('name'),
-        supabase.from('scholarship_categories').select('id, name').order('name'),
+        supabase.from('scholarship_categories').select('id, name, description, documents_required').order('name'),
         supabase.from('courses').select('id, name, stream_id').order('name'),
         supabase.from('semesters').select('id, name, academic_year_id').order('name'),
+        supabase.from('academic_years').select('id, name, course_id, sequence').order('sequence'),
         supabase.from('academic_years').select('id, name, course_id, sequence').order('sequence')
     ]);
 
@@ -32,6 +34,7 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
     if (scholarshipRes.error) console.error("Metadata Error (Scholarship):", scholarshipRes.error.message);
     if (coursesRes.error) console.error("Metadata Error (Courses):", coursesRes.error.message);
     if (semestersRes.error) console.error("Metadata Error (Semesters):", semestersRes.error.message);
+    if (academicYearsRes.error) console.error("Metadata Error (AcademicYears):", academicYearsRes.error.message);
     if (academicYearsRes.error) console.error("Metadata Error (AcademicYears):", academicYearsRes.error.message);
 
     return {
@@ -42,13 +45,11 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
         semesters: semestersRes.data || [],
         academicYears: academicYearsRes.data || [],
         staticOptions: {
-            quotas: ["Minority", "Management", "Government", "NRI", "Tuition Fee Waiver"],
-            disciplines: ["Engineering", "Architecture", "Pharmacy", "Management"],
             howDidYouKnow: ["Counsellor", "Advertisement", "Friend", "Social Media", "Website"],
             admissionTypes: ["First Year", "Direct Second Year"],
+            admissionCategories: ["Open", "OBC", "SC", "ST", "VJNT", "SBC", "EWS", "TFWS"],
             genders: ["Male", "Female", "Other"],
-            bloodGroups: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
-            paymentPlans: ["One Time", "Installments"]
+            bloodGroups: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
         }
     };
 }
@@ -74,24 +75,29 @@ export async function calculateStudentFees(supabase: SupabaseClient, params: {
 
     const totalFee = Number(feeData?.amount || 0);
 
-    // 2. Fetch Scholarship Amount
+    // 3. Fetch Scholarship Amount
     let scholarshipAmt = 0;
+    let scholarshipAmountId: string | null = null;
     if (scholarshipCategoryId) {
         const { data: schData, error: schError } = await supabase
             .from('scholarship_amounts')
-            .select('amount')
+            .select('id, amount')
             .eq('course_id', courseId)
             .eq('category_id', scholarshipCategoryId)
             .maybeSingle();
             
         if (schError) console.warn("Scholarship lookup error:", schError.message);
-        scholarshipAmt = Number(schData?.amount || 0);
+        if (schData) {
+            scholarshipAmt = Number(schData.amount);
+            scholarshipAmountId = schData.id;
+        }
     }
 
     return {
         feeId: feeData?.id,
         totalFee,
         scholarshipAmt,
+        scholarshipAmountId,
         netPayable: totalFee - scholarshipAmt,
         currency: "INR",
         timestamp: new Date().toISOString()
@@ -107,7 +113,7 @@ export async function getStudentProfile(supabase: SupabaseClient, userId: string
             *,
             courses (id, name, stream_id),
             year_category (id, name),
-            semesters!students_current_sem_id_fkey (
+            semesters!current_sem_id (
                 id, 
                 name,
                 academic_years (id, name)
@@ -128,7 +134,7 @@ export async function getStudentEnrollmentProgress(supabase: SupabaseClient, stu
         .single();
     if (!student) return null;
 
-    const [yearsRes, enrollmentsRes] = await Promise.all([
+    const [yearsRes, enrollmentsRes, studentYearsRes] = await Promise.all([
         supabase
             .from('academic_years')
             .select('*, semesters(*, subjects(*))')
@@ -137,11 +143,16 @@ export async function getStudentEnrollmentProgress(supabase: SupabaseClient, stu
         supabase
             .from('student_semesters')
             .select('*, semesters(id, name, academic_year_id)')
+            .eq('student_id', studentId),
+        supabase
+            .from('student_academic_years')
+            .select('*')
             .eq('student_id', studentId)
     ]);
     return {
         years: yearsRes.data || [],
-        enrollments: enrollmentsRes.data || []
+        enrollments: enrollmentsRes.data || [],
+        studentYears: studentYearsRes.data || []
     };
 }
 
@@ -167,11 +178,6 @@ export async function submitAdmissionForm(supabase: SupabaseClient, userId: stri
         user_id: userId,
         registration_no: formData.registration_no,
         merit_no: formData.merit_no,
-        quota_selection: formData.quota_selection,
-        discipline: formData.discipline,
-        branch_preferences: Array.isArray(formData.branch_preferences) 
-            ? formData.branch_preferences.join(", ") 
-            : formData.branch_preferences,
         how_did_you_know: formData.how_did_you_know,
         scholarship_category_id: formData.scholarship_category_id,
         admission_type: formData.admission_type,
@@ -243,12 +249,34 @@ export async function submitAdmissionForm(supabase: SupabaseClient, userId: stri
 
     // 4. Academic Year & Semester Initialization (only for new students)
     if (!existing) {
+        // Look up academic year name and session
+        const { data: ayMeta } = await supabase
+            .from("academic_years")
+            .select("name")
+            .eq("id", formData.academic_year_id)
+            .maybeSingle();
+
+        // Calculate fees to get IDs
+        const feeResult = await calculateStudentFees(supabase, {
+            courseId: formData.course_id,
+            academicYearId: formData.academic_year_id,
+            scholarshipCategoryId: formData.scholarship_category_id,
+            admissionCategory: formData.admission_category // Added: pass category for calculation
+        });
+
         const { data: academicYear, error: ayError } = await supabase
             .from("student_academic_years")
             .insert({
                 student_id: newStudent.id,
                 course_id: formData.course_id,
+                academic_year_name: ayMeta?.name || "N/A",
                 academic_year_session: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+                year_category_id: formData.academic_year_id, // This is the admission year ID (year_category)
+                scholarship_category_id: formData.scholarship_category_id || null,
+                scholarship_amount_id: feeResult.scholarshipAmountId || null,
+                total_fee: feeResult.totalFee,
+                scholarship_amount: feeResult.scholarshipAmt,
+                net_payable_fee: feeResult.netPayable,
                 status: 'Active'
             })
             .select("id")
@@ -302,7 +330,12 @@ export async function getUserType(supabase: any, userId: string): Promise<{
     type: 'student' | 'management' | null,
     role?: string,
     isApproved: boolean,
-    profile?: any
+    profile?: any,
+    studentVerification?: {
+        admin: boolean,
+        accountant: boolean,
+        examcell: boolean
+    }
 }> {
     // Check Management first
     const { data: mgmt } = await supabase
@@ -331,7 +364,12 @@ export async function getUserType(supabase: any, userId: string): Promise<{
         return {
             type: 'student',
             isApproved: student.is_verifiedby_admin,
-            profile: student
+            profile: student,
+            studentVerification: {
+                admin: !!student.is_verifiedby_admin,
+                accountant: !!student.is_verifiedby_accountant,
+                examcell: !!student.is_verifiedby_examcell
+            }
         };
     }
 

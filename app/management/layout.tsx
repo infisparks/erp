@@ -210,15 +210,15 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
           </div>
 
           <div className="flex items-center gap-2">
-            <button className="h-9 px-4 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg flex items-center gap-2 text-xs font-semibold transition-all border border-slate-100 hover:border-slate-200">
-              <Search size={14} /> Search
+            <button className="h-9 px-3 sm:px-4 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg flex items-center gap-2 text-xs font-semibold transition-all border border-slate-100 hover:border-slate-200">
+              <Search size={14} /> <span className="hidden sm:inline">Search</span>
             </button>
             <button className="h-9 w-9 bg-white border border-slate-100 text-slate-400 hover:text-slate-600 rounded-lg flex items-center justify-center transition-all">
               <Bell size={16} />
             </button>
-            <div className="flex items-center gap-2 h-9 px-3 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">
+            <div className="flex items-center gap-2 h-9 px-2 sm:px-3 bg-emerald-50 text-emerald-700 text-[10px] sm:text-xs font-bold rounded-lg border border-emerald-100 italic">
               <div className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              Live
+              <span className="hidden xs:inline">Live</span>
             </div>
           </div>
         </header>
