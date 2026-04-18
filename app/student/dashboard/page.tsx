@@ -8,7 +8,7 @@ import {
   Calendar, BookOpen,
   BarChart2, RefreshCw, User, FileText,
   ShieldCheck, ArrowUpRight, Megaphone, ShieldAlert,
-  Coffee, Bell, School
+  Coffee, Bell, School, FileX, GraduationCap
 } from "lucide-react"
 import Link from "next/link"
 import { getSupabaseClient } from "@/lib/supabase/client"
@@ -35,6 +35,8 @@ const quickActions = [
   { Icon: CreditCard,   label: "Fees",       color: "#B53030", bg: "#FFECEC", href: "/student/fees" },
   { Icon: BarChart2,    label: "Results",    color: "#5B4FCC", bg: "#EEEBFF", href: "/student/results" },
   { Icon: Calendar,     label: "Schedule",   color: "#2E75C7", bg: "#E6F4FF", href: "/student/schedule" },
+  { Icon: FileX,        label: "Cancellation", color: "#B53030", bg: "#FFECEC", href: "/student/cancellation" },
+  { Icon: GraduationCap,label: "Scholarship",  color: "#5B4FCC", bg: "#EEEBFF", href: "/student/scholarship" },
   { Icon: Coffee,       label: "Canteen",    color: "#A07800", bg: "#FFFBE6", href: "/student/canteen" },
   { Icon: Megaphone,    label: "More",       color: "#4B5563", bg: "#F3F4F6", href: "/student/registration" },
 ]
@@ -240,7 +242,7 @@ export default function StudentDashboard() {
                   <h3 className="text-lg font-semibold text-[#1A2340] tracking-tight">Academic Services</h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 md:gap-6">
                      {quickActions.map((action, i) => {
-                        const isLocked = !isFullyVerified && action.label !== "Profile"
+                        const isLocked = !isFullyVerified && action.label !== "Profile" && action.label !== "Cancellation"
                         return (
                            <Link key={i} href={isLocked ? "#" : action.href} className="group">
                               <div className="flex flex-col items-center gap-3">

@@ -191,10 +191,12 @@ export default function FeesManagementPage() {
     string | null
   >(null)
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
+  const [selectedScholarshipCategory, setSelectedScholarshipCategory] = useState<string | null>(null)
 
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
+  const [allScholarshipCategories, setAllScholarshipCategories] = useState<any[]>([])
   const [loadingFilters, setLoadingFilters] = useState(true)
 
   // --- Memoized Filter Options ---
@@ -216,6 +218,10 @@ export default function FeesManagementPage() {
       .filter((ay) => ay.course_id === selectedCourse)
       .sort((a, b) => a.sequence - b.sequence)
   }, [allAcademicYears, selectedCourse])
+
+  const scholarshipOptions = useMemo(() => {
+    return (allScholarshipCategories || []).sort(sortByName)
+  }, [allScholarshipCategories])
 
   // --- Data Fetching (Students) ---
   const fetchStudents = useCallback(
@@ -269,6 +275,10 @@ export default function FeesManagementPage() {
               (ay) => ay.id === selectedAcademicYear,
             )?.name
             if (yearName) query = query.eq("academic_year_name", yearName)
+          }
+
+          if (selectedScholarshipCategory) {
+            query = query.eq("scholarship_category_id", selectedScholarshipCategory)
           }
         }
 
@@ -335,6 +345,7 @@ export default function FeesManagementPage() {
       selectedStream,
       selectedCourse,
       selectedAcademicYear,
+      selectedScholarshipCategory,
       allAcademicYears,
     ],
   )
@@ -344,20 +355,23 @@ export default function FeesManagementPage() {
     const fetchAllConfig = async () => {
       setLoadingFilters(true)
       try {
-        const [streamData, courseData, ayData] = await Promise.all([
+        const [streamData, courseData, ayData, scholData] = await Promise.all([
           supabase.from("streams").select("*"),
           supabase.from("courses").select("*"),
           supabase.from("academic_years").select("id, name, course_id, sequence"),
+          supabase.from("scholarship_categories").select("id, name"),
         ])
 
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
         if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[])
+        if (scholData.data) setAllScholarshipCategories(scholData.data)
 
         const errors = [
           streamData.error,
           courseData.error,
           ayData.error,
+          scholData.error,
         ].filter(Boolean)
         if (errors.length > 0) {
           throw new Error(errors.map((e) => (e as Error).message).join(", "))
@@ -398,6 +412,10 @@ export default function FeesManagementPage() {
     setSelectedAcademicYear(value)
   }
 
+  const handleScholarshipChange = (value: string | null) => {
+    setSelectedScholarshipCategory(value)
+  }
+
   // --- Search and Action Handlers ---
   const handleFilterSearch = () => {
     // Triggers a refetch with current filters and search terms
@@ -408,6 +426,7 @@ export default function FeesManagementPage() {
     setSelectedStream(null)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
+    setSelectedScholarshipCategory(null)
     setStudentSearch("")
     setRollNumberSearch("")
     setGlobalFilter("")
@@ -727,6 +746,14 @@ export default function FeesManagementPage() {
                 onChange={handleAcademicYearChange}
                 placeholder="All Years..."
                 disabled={loadingFilters || !selectedCourse}
+              />
+              <DropdownSelect
+                label="Filter by Scholarship"
+                options={scholarshipOptions}
+                value={selectedScholarshipCategory}
+                onChange={handleScholarshipChange}
+                placeholder="All Scholarships..."
+                disabled={loadingFilters}
               />
             </div>
 

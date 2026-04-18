@@ -269,6 +269,7 @@ function AddPaymentPage() {
     trust_name: '',
     trust_id: '',
     notes: '',
+    payment_date: new Date().toISOString().split('T')[0],
   })
 
   // --- Data Fetching (UPDATED) ---
@@ -474,7 +475,7 @@ function AddPaymentPage() {
         setNewPaymentData(prev => ({ ...prev, bank_name: '', cheque_number: '' }));
       }
       if (value !== 'Razorpay' && value !== 'Online (UPI)' && value !== 'Bank Transfer (NEFT/RTGS)') {
-        setNewPaymentData(prev => ({ ...prev, transaction_id: '' }));
+        setNewPaymentData(prev => ({ ...prev, transaction_id: '', bank_name: '' }));
       }
       if (value !== 'Trust') {
         setNewPaymentData(prev => ({ ...prev, trust_name: '', trust_id: '' }));
@@ -538,6 +539,7 @@ function AddPaymentPage() {
           trust_name: targetTrust?.name || newPaymentData.trust_name || null,
           trust_id: newPaymentData.trust_id || null,
           notes: newPaymentData.notes || null,
+          created_at: new Date(newPaymentData.payment_date + "T" + new Date().toTimeString().split(" ")[0]).toISOString()
         })
         .select('id')
         .single();
@@ -905,9 +907,31 @@ function AddPaymentPage() {
                 {(newPaymentData.payment_method === 'Razorpay' ||
                   newPaymentData.payment_method === 'Online (UPI)' ||
                   newPaymentData.payment_method === 'Bank Transfer (NEFT/RTGS)') && (
-                  <div className="p-4 border bg-muted rounded-lg">
+                  <div className="p-4 border bg-muted rounded-lg space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="font-medium">Bank Name*</Label>
+                        <SearchableSelect
+                          options={bankNameOptions}
+                          value={newPaymentData.bank_name}
+                          onChange={handleBankSelectChange}
+                          placeholder="Search bank..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="payment_date" className="font-medium">Transaction Date*</Label>
+                        <Input
+                          id="payment_date"
+                          name="payment_date"
+                          type="date"
+                          value={newPaymentData.payment_date}
+                          onChange={handlePaymentFormChange}
+                          required
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-2">
-                      <Label htmlFor="transaction_id" className="font-medium">Transaction ID</Label>
+                      <Label htmlFor="transaction_id" className="font-medium">Transaction ID / Ref No.*</Label>
                       <Input
                         id="transaction_id"
                         name="transaction_id"

@@ -26,7 +26,7 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
         supabase.from('courses').select('id, name, stream_id').order('name'),
         supabase.from('semesters').select('id, name, academic_year_id').order('name'),
         supabase.from('academic_years').select('id, name, course_id, sequence').order('sequence'),
-        supabase.from('academic_years').select('id, name, course_id, sequence').order('sequence')
+        supabase.from('master_data').select('*').eq('type', 'required_docs')
     ]);
 
     if (streamsRes.error) console.error("Metadata Error (Streams):", streamsRes.error.message);
@@ -35,7 +35,7 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
     if (coursesRes.error) console.error("Metadata Error (Courses):", coursesRes.error.message);
     if (semestersRes.error) console.error("Metadata Error (Semesters):", semestersRes.error.message);
     if (academicYearsRes.error) console.error("Metadata Error (AcademicYears):", academicYearsRes.error.message);
-    if (academicYearsRes.error) console.error("Metadata Error (AcademicYears):", academicYearsRes.error.message);
+    if (masterDataRes.error) console.error("Metadata Error (MasterData):", masterDataRes.error.message);
 
     return {
         streams: streamsRes.data || [],
@@ -44,6 +44,7 @@ export async function getAdmissionMetadata(supabase: SupabaseClient) {
         courses: coursesRes.data || [],
         semesters: semestersRes.data || [],
         academicYears: academicYearsRes.data || [],
+        documentRequirements: masterDataRes.data || [],
         staticOptions: {
             howDidYouKnow: ["Counsellor", "Advertisement", "Friend", "Social Media", "Website"],
             admissionTypes: ["First Year", "Direct Second Year"],
@@ -60,6 +61,7 @@ export async function calculateStudentFees(supabase: SupabaseClient, params: {
     courseId: string;
     academicYearId: string;
     scholarshipCategoryId?: string;
+    admissionCategory?: string;
 }) {
     const { courseId, academicYearId, scholarshipCategoryId } = params;
 
@@ -113,6 +115,10 @@ export async function getStudentProfile(supabase: SupabaseClient, userId: string
             *,
             courses (id, name, stream_id),
             year_category (id, name),
+            student_academic_years (
+                *,
+                year_category (id, name)
+            ),
             semesters!current_sem_id (
                 id, 
                 name,

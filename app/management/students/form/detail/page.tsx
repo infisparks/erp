@@ -73,6 +73,7 @@ import {
     ShieldAlert,
     CheckSquare,
     ExternalLink,
+    ChevronRight,
 } from "lucide-react"
 
 // --- Type Definitions ---
@@ -133,6 +134,8 @@ interface StudentDetail {
     form_no: string | null
     registration_no: string | null
     merit_no: string | null
+    abc_id: string | null
+    apaar_id: string | null
     roll_number: string;
     is_locked: boolean;
     is_verifiedby_admin: boolean;
@@ -164,10 +167,10 @@ interface StudentDetail {
     } | null;
 
     academic_records: {
-        ssc_year: string; ssc_seat: string; ssc_inst: string; ssc_board: string; ssc_obt: string; ssc_out: string; ssc_pct: string;
-        hsc_year: string; hsc_seat: string; hsc_inst: string; hsc_board: string; hsc_phy: string; hsc_math: string; hsc_chem: string; hsc_obt: string; hsc_out: string; hsc_pct: string;
-        dip_year: string; dip_seat: string; dip_inst: string; dip_board: string; dip_pct: string;
-        dsy_inst: string; dsy_code: string; dsy_branch: string; dsy_obt: string; dsy_out: string;
+        ssc_year: string; ssc_seat: string; ssc_inst: string; ssc_inst_addr: string; ssc_board: string; ssc_obt: string; ssc_out: string; ssc_pct: string;
+        hsc_year: string; hsc_seat: string; hsc_inst: string; hsc_inst_addr: string; hsc_board: string; hsc_phy: string; hsc_math: string; hsc_chem: string; hsc_obt: string; hsc_out: string; hsc_pct: string;
+        dip_year: string; dip_seat: string; dip_inst: string; dip_inst_addr: string; dip_board: string; dip_pct: string;
+        dsy_inst: string; dsy_inst_addr: string; dsy_code: string; dsy_branch: string; dsy_obt: string; dsy_out: string;
         cet_seat: string; cet_pct: string; jee_seat: string; jee_total: string; nata_seat: string; nata_obt: string; nata_out: string;
     } | null;
     correspondence_details: { taluka: string; district: string; } | null;
@@ -450,6 +453,12 @@ function StudentDetailContent() {
     const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
     const [allSemesters, setAllSemesters] = useState<Semester[]>([])
     const [allCategories, setAllCategories] = useState<{ id: string, name: string }[]>([])
+    const [docRules, setDocRules] = useState<any[]>([])
+
+    // --- New State for Profile Extensions ---
+    const [allScholarships, setAllScholarships] = useState<any[]>([])
+    const [cancellationRequests, setCancellationRequests] = useState<any[]>([])
+    const [enrollmentHistory, setEnrollmentHistory] = useState<any[]>([])
 
 
     // --- Memoized Options for Edit Form Cascade ---
@@ -492,16 +501,18 @@ function StudentDetailContent() {
                     customData,
                     docData,
                     courseData,
-                    academicYearData, // This is from 'academic_years'
+                    academicYearData, 
                     semesterData,
-                    scholarshipCategories
+                    scholarshipCategories,
+                    docRulesData
                 ] = await Promise.all([
                    supabase.from("form_config").select("data_jsonb").eq("data_name", "custom_field_options").single(),
                     supabase.from("form_config").select("data_jsonb").eq("data_name", "document_options").single(),
                     supabase.from("courses").select("id, name"), 
                     supabase.from("academic_years").select("id, name, course_id"), 
                     supabase.from("semesters").select("id, name, academic_year_id"),
-                    supabase.from("scholarship_categories").select("id, name")
+                    supabase.from("scholarship_categories").select("id, name"),
+                    supabase.from("master_data").select("*").eq("type", "required_docs")
                 ])
 
                 // 🚀 FIX: Set state for form_config data
@@ -516,6 +527,7 @@ function StudentDetailContent() {
                 setAllAcademicYears(fetchedAcademicYears);
                 setAllSemesters(fetchedSemesters);
                 setAllCategories(scholarshipCategories.data || []);
+                setDocRules(docRulesData.data || []);
 
                 // 2. Fetch Student Data (with JOINs for descriptive names)
                 const { data: studentD, error: studentError } = await supabase
@@ -525,7 +537,30 @@ function StudentDetailContent() {
                     .single()
                 if (studentError) throw new Error(`Failed to fetch student: ${studentError.message}`);
 
-                // 3. Fetch Latest Academic Year (not just active)
+                // 3. Fetch Profile Extensions (Scholarships, Cancellations, History)
+                const [
+                    scholarshipData,
+                    cancellationData,
+                    historyData,
+                    semHistoryData
+                ] = await Promise.all([
+                    supabase.from('student_academic_years').select('*').eq('student_id', studentId).not('scholarship_application_id', 'is', null).order('created_at', { ascending: false }),
+                    supabase.from('cancellation_requests').select('*').eq('student_id', studentId).order('created_at', { ascending: false }),
+                    supabase.from('student_academic_years').select('*, courses(name)').eq('student_id', studentId).order('created_at', { ascending: false }),
+                    supabase.from('student_semesters').select('*, semesters(name)').eq('student_id', studentId).order('created_at', { ascending: false })
+                ])
+
+                setAllScholarships(scholarshipData.data || [])
+                setCancellationRequests(cancellationData.data || [])
+
+                // Merge history
+                const combinedHistory = (historyData.data || []).map((ay: any) => ({
+                    ...ay,
+                    semesters: (semHistoryData.data || []).filter((s: any) => s.student_academic_year_id === ay.id)
+                }))
+                setEnrollmentHistory(combinedHistory)
+
+                // 4. Fetch Latest Academic Year
                 const { data: latestAY, error: ayError } = await supabase
                     .from("student_academic_years")
                     .select("*")
@@ -605,7 +640,47 @@ function StudentDetailContent() {
         }
 
         fetchAllData()
-    }, [studentId, supabase]) // 🚀 Removed enrollmentId and academicYearId
+    }, [studentId, supabase]) 
+
+    // --- 🚀 Mandatory Doc Calculation 🚀 ---
+    const mandatoryDocs = useMemo(() => {
+        if (!studentData || docRules.length === 0) return [];
+        
+        let docs = new Set<string>();
+        
+        // Universal docs
+        const universal = docRules.find(r => r.value === 'Universal');
+        if (universal?.metadata?.docs) universal.metadata.docs.forEach((d: string) => docs.add(d));
+
+        // Admission Type docs
+        if (studentData.admission_type) {
+            const typeRule = docRules.find(r => r.value === studentData.admission_type);
+            if (typeRule?.metadata?.docs) typeRule.metadata.docs.forEach((d: string) => docs.add(d));
+        }
+
+        // Admission Category docs
+        if (studentData.admission_category) {
+            const catRule = docRules.find(r => r.value === studentData.admission_category);
+            if (catRule?.metadata?.docs) catRule.metadata.docs.forEach((d: string) => docs.add(d));
+        }
+
+        // Scholarship docs
+        const scholarshipName = studentData.scholarship_categories?.name;
+        if (scholarshipName) {
+            const scholRule = docRules.find(r => r.value === scholarshipName);
+            if (scholRule?.metadata?.docs) scholRule.metadata.docs.forEach((d: string) => docs.add(d));
+        }
+
+        return Array.from(docs);
+    }, [studentData, docRules]);
+
+    const missingDocs = useMemo(() => {
+        if (!studentData) return [];
+        const uploaded = (studentData.documents || []).map((d: any) => 
+            (typeof d === 'string' ? d : (d.type || d.name || "")).toLowerCase()
+        );
+        return mandatoryDocs.filter(doc => !uploaded.includes(doc.toLowerCase()));
+    }, [studentData, mandatoryDocs]);
 
 
     // --- 🚀 Nested Field Handlers 🚀 ---
@@ -1101,14 +1176,14 @@ function StudentDetailContent() {
             ["Corr. City", student.city],
             ["Corr. State", student.state],
             ["Corr. ZIP", student.zipcode],
-            ["Corr. Taluka", student.correspondence_details?.taluka],
-            ["Corr. District", student.correspondence_details?.district],
-            ["Perm. Address", student.permanent_details?.address],
-            ["Perm. City", student.permanent_details?.city],
-            ["Perm. State", student.permanent_details?.state],
-            ["Perm. ZIP", student.permanent_details?.zipcode],
-            ["Perm. Taluka", student.permanent_details?.taluka],
-            ["Perm. District", student.permanent_details?.district],
+            ["Corr. Taluka", student.correspondence_details?.taluka ?? null],
+            ["Corr. District", student.correspondence_details?.district ?? null],
+            ["Perm. Address", student.permanent_details?.address ?? null],
+            ["Perm. City", student.permanent_details?.city ?? null],
+            ["Perm. State", student.permanent_details?.state ?? null],
+            ["Perm. ZIP", student.permanent_details?.zipcode ?? null],
+            ["Perm. Taluka", student.permanent_details?.taluka ?? null],
+            ["Perm. District", student.permanent_details?.district ?? null],
         ]);
 
         // --- 9. Application & Category Details ---
@@ -1120,7 +1195,7 @@ function StudentDetailContent() {
             ["Admission Type", student.admission_type],
             ["Adm. Category", student.admission_category],
             ["Category Type", student.category_type],
-            ["Scholarship", student.scholarship_categories?.name],
+            ["Scholarship", student.scholarship_categories?.name ?? null],
         ]);
 
         // --- 10. Academic History ---
@@ -1221,6 +1296,8 @@ function StudentDetailContent() {
                             <DetailItem label="Nationality" value={student.nationality} />
                             <DetailItem label="Place of Birth" value={student.place_of_birth} />
                             <DetailItem label="Aadhar" value={student.aadhar_card_number} />
+                            <DetailItem label="ABC ID" value={student.abc_id} />
+                            <DetailItem label="APAAR ID" value={student.apaar_id} />
                             <DetailItem label="PAN" value={student.pan_no} />
                             <DetailItem label="Domicile of Maharashtra" value={student.domicile_of_maharashtra} />
                             <DetailItem label="PHD/Handicap" value={student.phd_handicap} />
@@ -1283,6 +1360,7 @@ function StudentDetailContent() {
                                     <DetailItem label="Year" value={student.academic_records?.ssc_year} />
                                     <DetailItem label="Board" value={student.academic_records?.ssc_board} />
                                     <DetailItem label="Institute" value={student.academic_records?.ssc_inst} />
+                                    <DetailItem label="Institute Addr" value={student.academic_records?.ssc_inst_addr} />
                                     <DetailItem label="Seat No." value={student.academic_records?.ssc_seat} />
                                     <DetailItem label="Marks" value={`${student.academic_records?.ssc_obt} / ${student.academic_records?.ssc_out}`} />
                                     <DetailItem label="Percentage" value={student.academic_records?.ssc_pct ? `${student.academic_records.ssc_pct}%` : "N/A"} />
@@ -1292,12 +1370,13 @@ function StudentDetailContent() {
                             <Separator />
 
                             {/* HSC Section */}
-                            <div className="space-y-4">
+                             <div className="space-y-4">
                                 <h4 className="font-semibold text-primary/80 border-b pb-1">HSC (12th Standard)</h4>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                                     <DetailItem label="Year" value={student.academic_records?.hsc_year} />
                                     <DetailItem label="Board" value={student.academic_records?.hsc_board} />
                                     <DetailItem label="Institute" value={student.academic_records?.hsc_inst} />
+                                    <DetailItem label="Institute Addr" value={student.academic_records?.hsc_inst_addr} />
                                     <DetailItem label="Seat No." value={student.academic_records?.hsc_seat} />
                                     <DetailItem label="Physics" value={student.academic_records?.hsc_phy} />
                                     <DetailItem label="Maths" value={student.academic_records?.hsc_math} />
@@ -1316,6 +1395,7 @@ function StudentDetailContent() {
                                             <DetailItem label="Year" value={student.academic_records?.dip_year} />
                                             <DetailItem label="Board" value={student.academic_records?.dip_board} />
                                             <DetailItem label="Institute" value={student.academic_records?.dip_inst} />
+                                            <DetailItem label="Institute Addr" value={student.academic_records?.dip_inst_addr} />
                                             <DetailItem label="Seat No." value={student.academic_records?.dip_seat} />
                                             <DetailItem label="Percentage" value={student.academic_records?.dip_pct ? `${student.academic_records.dip_pct}%` : "N/A"} />
                                         </div>
@@ -1330,6 +1410,7 @@ function StudentDetailContent() {
                                         <h4 className="font-semibold text-primary/80 border-b pb-1">Direct Second Year (DSY)</h4>
                                         <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                                             <DetailItem label="Institute" value={student.academic_records?.dsy_inst} />
+                                            <DetailItem label="Institute Addr" value={student.academic_records?.dsy_inst_addr} />
                                             <DetailItem label="Code" value={student.academic_records?.dsy_code} />
                                             <DetailItem label="Branch" value={student.academic_records?.dsy_branch} />
                                             <DetailItem label="Marks" value={student.academic_records?.dsy_obt ? `${student.academic_records.dsy_obt} / ${student.academic_records.dsy_out}` : "N/A"} />
@@ -1427,6 +1508,120 @@ function StudentDetailContent() {
                             </AccordionContent>
                         </AccordionItem>
                     )}
+                    {missingDocs.length > 0 && (
+                        <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg mb-6 flex items-start gap-3">
+                            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5" />
+                            <div>
+                                <h4 className="text-sm font-bold text-red-700">Missing Mandatory Documents ({missingDocs.length})</h4>
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                    {missingDocs.map(doc => (
+                                        <Badge key={doc} variant="destructive" className="bg-red-100 text-red-700 border-red-200 font-normal hover:bg-red-100">
+                                            {doc}
+                                        </Badge>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-red-600 mt-2 italic">* Based on Student Category & Scholarship rules.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    <AccordionItem value="item-scholarships">
+                        <AccordionTrigger className="text-lg font-semibold">Scholarship Applications</AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-3">
+                            {allScholarships.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic py-4">No scholarship records found.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {allScholarships.map(s => (
+                                        <div key={s.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between group">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[14px] font-bold text-slate-800">
+                                                       {allCategories.find((c: any) => c.id === s.scholarship_category_id)?.name || "Scholarship"}
+                                                    </span>
+                                                    <Badge className={cn(
+                                                        "text-[9px] font-bold uppercase",
+                                                        s.scholarship_status === 'approved' ? "bg-emerald-50 text-emerald-600 border-none" :
+                                                        s.scholarship_status === 'rejected' ? "bg-rose-50 text-rose-600 border-none" : "bg-amber-50 text-amber-600 border-none"
+                                                    )}>{s.scholarship_status}</Badge>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider leading-none">
+                                                   APP ID: {s.scholarship_application_id} • Year {s.academic_year_name}
+                                                </p>
+                                            </div>
+                                            <Button asChild size="sm" variant="ghost" className="h-8 group-hover:bg-white border-transparent hover:border-slate-200 transition-all">
+                                                <Link href={`/management/students/scholarships/${s.id}`}>Verify <ExternalLink size={12} className="ml-1.5" /></Link>
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="item-enrollment-history">
+                        <AccordionTrigger className="text-lg font-semibold">Academic Timeline & Enrollments</AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-4">
+                            {enrollmentHistory.map(ay => (
+                                <div key={ay.id} className="p-5 border border-slate-200 rounded-2xl bg-white shadow-sm space-y-4">
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-900">{ay.academic_year_name}</h4>
+                                            <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider mt-0.5">{ay.courses?.name} • Session {ay.academic_year_session}</p>
+                                        </div>
+                                        <Badge variant="outline" className="text-[9px] font-bold border-slate-200 text-slate-400">AY ID: {ay.id}</Badge>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {ay.semesters?.map((sem: any) => (
+                                            <div key={sem.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-[12px] font-bold text-slate-700">{sem.semesters?.name || "Semester"}</p>
+                                                    <p className="text-[9px] text-slate-400 font-medium mt-0.5">Enrollment: {new Date(sem.created_at).toLocaleDateString()}</p>
+                                                </div>
+                                                <Badge className={cn(
+                                                    "text-[8px] font-bold uppercase",
+                                                    sem.status === 'active' ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400"
+                                                )}>{sem.status}</Badge>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="item-cancellations">
+                        <AccordionTrigger className="text-lg font-semibold">Withdrawal & Cancellation Requests</AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-3">
+                            {cancellationRequests.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic py-4">No cancellation requests found.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {cancellationRequests.map(c => (
+                                        <div key={c.id} className="p-4 bg-rose-50/30 border border-rose-100 rounded-xl space-y-3 group">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <AlertTriangle size={14} className="text-rose-500" />
+                                                    <span className="text-[13px] font-bold text-slate-800">Cancellation for {c.cancel_year}</span>
+                                                </div>
+                                                <Badge className={cn(
+                                                    "text-[9px] font-bold uppercase",
+                                                    c.status === 'approved' ? "bg-emerald-50 text-emerald-600" :
+                                                    c.status === 'rejected' ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"
+                                                )}>{c.status}</Badge>
+                                            </div>
+                                            <p className="text-[12px] text-slate-600 line-clamp-2 px-6 border-l-2 border-rose-200">{c.reason}</p>
+                                            <div className="mt-2 flex justify-end">
+                                                <Button asChild size="sm" variant="outline" className="h-8 rounded-lg text-xs font-bold border-rose-200 text-rose-600 hover:bg-rose-50">
+                                                    <Link href={`/management/students/cancellations/${c.id}`}>Process Request</Link>
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
 
                 </Accordion>
             </div>
@@ -1485,12 +1680,19 @@ function StudentDetailContent() {
                                 <FormInputGroup label="Religion" name="religion" value={editFormData.religion || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Caste" name="caste" value={editFormData.caste || ""} onChange={handleEditChange} />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormSelectGroup label="Domicile" name="domicile_of_maharashtra" value={editFormData.domicile_of_maharashtra} onValueChange={(val) => handleEditSelectChange("domicile_of_maharashtra", val)} options={yesNoOptions} placeholder="Domicile?" />
                                 <FormSelectGroup label="Handicap" name="phd_handicap" value={editFormData.phd_handicap} onValueChange={(val) => handleEditSelectChange("phd_handicap", val)} options={yesNoOptions} placeholder="Handicap?" />
-                                <FormInputGroup label="Aadhar Number" name="aadhar_card_number" value={editFormData.aadhar_card_number || ""} onChange={handleEditChange} />
                             </div>
-                            <FormInputGroup label="PAN Card Number" name="pan_no" value={editFormData.pan_no || ""} onChange={handleEditChange} />
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormInputGroup label="Aadhar Number" name="aadhar_card_number" value={editFormData.aadhar_card_number || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="ABC ID" name="abc_id" value={editFormData.abc_id || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="APAAR ID" name="apaar_id" value={editFormData.apaar_id || ""} onChange={handleEditChange} />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="PAN Card Number" name="pan_no" value={editFormData.pan_no || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Source of Info" name="how_did_you_know" value={editFormData.how_did_you_know || ""} onChange={handleEditChange} />
+                            </div>
                         </CardContent>
                     </Card>
 
@@ -1537,7 +1739,10 @@ function StudentDetailContent() {
                                 <FormInputGroup label="Passing Year" value={editFormData.academic_records?.ssc_year || ""} onChange={(e) => handleAcademicChange("ssc_year", e.target.value)} />
                                 <FormInputGroup label="Board" value={editFormData.academic_records?.ssc_board || ""} onChange={(e) => handleAcademicChange("ssc_board", e.target.value)} />
                             </div>
-                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.ssc_inst || ""} onChange={(e) => handleAcademicChange("ssc_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Institute Name" value={editFormData.academic_records?.ssc_inst || ""} onChange={(e) => handleAcademicChange("ssc_inst", e.target.value)} />
+                                <FormInputGroup label="Institute Address" value={editFormData.academic_records?.ssc_inst_addr || ""} onChange={(e) => handleAcademicChange("ssc_inst_addr", e.target.value)} />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <FormInputGroup label="Seat No." value={editFormData.academic_records?.ssc_seat || ""} onChange={(e) => handleAcademicChange("ssc_seat", e.target.value)} />
                                 <FormInputGroup label="Obtained" type="number" value={editFormData.academic_records?.ssc_obt || ""} onChange={(e) => handleAcademicChange("ssc_obt", e.target.value)} />
@@ -1554,7 +1759,10 @@ function StudentDetailContent() {
                                 <FormInputGroup label="Passing Year" value={editFormData.academic_records?.hsc_year || ""} onChange={(e) => handleAcademicChange("hsc_year", e.target.value)} />
                                 <FormInputGroup label="Board" value={editFormData.academic_records?.hsc_board || ""} onChange={(e) => handleAcademicChange("hsc_board", e.target.value)} />
                             </div>
-                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.hsc_inst || ""} onChange={(e) => handleAcademicChange("hsc_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Institute Name" value={editFormData.academic_records?.hsc_inst || ""} onChange={(e) => handleAcademicChange("hsc_inst", e.target.value)} />
+                                <FormInputGroup label="Institute Address" value={editFormData.academic_records?.hsc_inst_addr || ""} onChange={(e) => handleAcademicChange("hsc_inst_addr", e.target.value)} />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormInputGroup label="Seat No." value={editFormData.academic_records?.hsc_seat || ""} onChange={(e) => handleAcademicChange("hsc_seat", e.target.value)} />
                                 <FormInputGroup label="Physics" type="number" value={editFormData.academic_records?.hsc_phy || ""} onChange={(e) => handleAcademicChange("hsc_phy", e.target.value)} />
@@ -1574,7 +1782,10 @@ function StudentDetailContent() {
                                 <FormInputGroup label="Passing Year" value={editFormData.academic_records?.dip_year || ""} onChange={(e) => handleAcademicChange("dip_year", e.target.value)} />
                                 <FormInputGroup label="Board" value={editFormData.academic_records?.dip_board || ""} onChange={(e) => handleAcademicChange("dip_board", e.target.value)} />
                             </div>
-                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.dip_inst || ""} onChange={(e) => handleAcademicChange("dip_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Institute Name" value={editFormData.academic_records?.dip_inst || ""} onChange={(e) => handleAcademicChange("dip_inst", e.target.value)} />
+                                <FormInputGroup label="Institute Address" value={editFormData.academic_records?.dip_inst_addr || ""} onChange={(e) => handleAcademicChange("dip_inst_addr", e.target.value)} />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Seat No." value={editFormData.academic_records?.dip_seat || ""} onChange={(e) => handleAcademicChange("dip_seat", e.target.value)} />
                                 <FormInputGroup label="Percentage %" value={editFormData.academic_records?.dip_pct || ""} onChange={(e) => handleAcademicChange("dip_pct", e.target.value)} />
@@ -1587,6 +1798,7 @@ function StudentDetailContent() {
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Institute Name" value={editFormData.academic_records?.dsy_inst || ""} onChange={(e) => handleAcademicChange("dsy_inst", e.target.value)} />
+                                <FormInputGroup label="Institute Address" value={editFormData.academic_records?.dsy_inst_addr || ""} onChange={(e) => handleAcademicChange("dsy_inst_addr", e.target.value)} />
                                 <FormInputGroup label="Institute Code" value={editFormData.academic_records?.dsy_code || ""} onChange={(e) => handleAcademicChange("dsy_code", e.target.value)} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

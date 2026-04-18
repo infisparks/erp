@@ -7,7 +7,8 @@ import { getUserType } from "@/lib/erp-logic"
 import { 
   Loader2, LayoutGrid, Users, BookOpen, GraduationCap, 
   IndianRupee, Bell, Settings, LogOut, ChevronRight, 
-  ChevronLeft, Search, ClipboardList, Menu, X, Shield
+  ChevronLeft, Search, ClipboardList, Menu, X, Shield, XCircle,
+  Receipt
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -19,13 +20,15 @@ const NAV_ITEMS = [
     items: [
       { icon: LayoutGrid, label: "Dashboard", href: "/management/admin/dashboard" },
       { icon: Users, label: "Students", href: "/management/students" },
+      { icon: Receipt, label: "Student Ledger", href: "/management/students/ledger" },
+      { icon: XCircle, label: "Cancellations", href: "/management/students/cancellations" },
     ]
   },
   { 
     label: "Academics", 
     items: [
       { icon: BookOpen, label: "Courses", href: "/management/courses" },
-      { icon: GraduationCap, label: "Scholarship", href: "/management/scholarship" },
+      { icon: GraduationCap, label: "Scholarship", href: "/management/students/scholarships" },
       { icon: ClipboardList, label: "Attendance", href: "/management/attandance" },
     ]
   },
@@ -133,7 +136,10 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
               )}
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/")
+                  const active = pathname === item.href || (
+                    pathname.startsWith(item.href + "/") && 
+                    !(item.href === "/management/students" && pathname.startsWith("/management/students/cancellations"))
+                  )
                   return (
                     <Link
                       key={item.href}

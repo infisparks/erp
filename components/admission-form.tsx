@@ -142,6 +142,7 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
         religion: "", caste: "", blood_group: "",
         nationality: "Indian", place_of_birth: "", native_place: "",
         aadharCardNumber: "", pan_no: "",
+        abc_id: "", apaar_id: "",
         father_mobile_no: "", mother_mobile_no: "",
         domicile_of_maharashtra: "false", phd_handicap: "false",
         studentMobileNo: "", secondary_phone: "",
@@ -150,11 +151,12 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
         perm_address: "", perm_city: "", perm_state: "", perm_zipcode: "",
         perm_taluka: "", perm_district: "",
         same_as_correspondence: false,
+        other_doc_name: "",
         academic_records: {
-            ssc_year: "", ssc_seat: "", ssc_inst: "", ssc_board: "", ssc_obt: "", ssc_out: "", ssc_pct: "",
-            hsc_year: "", hsc_seat: "", hsc_inst: "", hsc_board: "", hsc_phy: "", hsc_math: "", hsc_chem: "", hsc_obt: "", hsc_out: "", hsc_pct: "",
-            dip_year: "", dip_seat: "", dip_inst: "", dip_board: "", dip_pct: "",
-            dsy_inst: "", dsy_code: "", dsy_branch: "", dsy_obt: "", dsy_out: "",
+            ssc_year: "", ssc_seat: "", ssc_inst: "", ssc_inst_addr: "", ssc_board: "", ssc_obt: "", ssc_out: "", ssc_pct: "",
+            hsc_year: "", hsc_seat: "", hsc_inst: "", hsc_inst_addr: "", hsc_board: "", hsc_phy: "", hsc_math: "", hsc_chem: "", hsc_obt: "", hsc_out: "", hsc_pct: "",
+            dip_year: "", dip_seat: "", dip_inst: "", dip_inst_addr: "", dip_board: "", dip_pct: "",
+            dsy_inst: "", dsy_inst_addr: "", dsy_code: "", dsy_branch: "", dsy_obt: "", dsy_out: "",
             cet_seat: "", cet_pct: "", jee_seat: "", jee_total: "", nata_seat: "", nata_obt: "", nata_out: ""
         },
         documents: [],
@@ -186,6 +188,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                 setIsLocked(student.is_locked === true)
                 setFormData({
                     how_did_you_know: student.how_did_you_know || "",
+                    registration_no: student.registration_no || "",
+                    merit_no: student.merit_no || "",
                     scholarship_category_id: student.scholarship_category_id || "",
                     stream_id: student.courses?.stream_id || "",
                     course_id: student.course_id || "",
@@ -215,6 +219,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                     native_place: student.native_place || "",
                     aadharCardNumber: student.aadhar_card_number || "",
                     pan_no: student.pan_no || "",
+                    abc_id: student.abc_id || "",
+                    apaar_id: student.apaar_id || "",
                     father_mobile_no: student.father_mobile_no || "",
                     mother_mobile_no: student.mother_mobile_no || "",
                     domicile_of_maharashtra: student.domicile_of_maharashtra === "true" || student.domicile_of_maharashtra === true ? "true" : "false",
@@ -237,6 +243,7 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                         ssc_year: student.academic_records?.ssc_year || "",
                         ssc_seat: student.academic_records?.ssc_seat || "",
                         ssc_inst: student.academic_records?.ssc_inst || "",
+                        ssc_inst_addr: student.academic_records?.ssc_inst_addr || "",
                         ssc_board: student.academic_records?.ssc_board || "",
                         ssc_obt: student.academic_records?.ssc_obt || "",
                         ssc_out: student.academic_records?.ssc_out || "",
@@ -244,6 +251,7 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                         hsc_year: student.academic_records?.hsc_year || "",
                         hsc_seat: student.academic_records?.hsc_seat || "",
                         hsc_inst: student.academic_records?.hsc_inst || "",
+                        hsc_inst_addr: student.academic_records?.hsc_inst_addr || "",
                         hsc_board: student.academic_records?.hsc_board || "",
                         hsc_phy: student.academic_records?.hsc_phy || "",
                         hsc_math: student.academic_records?.hsc_math || "",
@@ -254,9 +262,11 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                         dip_year: student.academic_records?.dip_year || "",
                         dip_seat: student.academic_records?.dip_seat || "",
                         dip_inst: student.academic_records?.dip_inst || "",
+                        dip_inst_addr: student.academic_records?.dip_inst_addr || "",
                         dip_board: student.academic_records?.dip_board || "",
                         dip_pct: student.academic_records?.dip_pct || "",
                         dsy_inst: student.academic_records?.dsy_inst || "",
+                        dsy_inst_addr: student.academic_records?.dsy_inst_addr || "",
                         dsy_code: student.academic_records?.dsy_code || "",
                         dsy_branch: student.academic_records?.dsy_branch || "",
                         dsy_obt: student.academic_records?.dsy_obt || "",
@@ -356,6 +366,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
             place_of_birth: formData.place_of_birth,
             native_place: formData.native_place,
             aadhar_card_number: formData.aadharCardNumber,
+            abc_id: formData.abc_id,
+            apaar_id: formData.apaar_id,
             pan_no: formData.pan_no,
             student_mobile_no: formData.studentMobileNo,
             phone: formData.studentMobileNo,
@@ -379,7 +391,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
             phd_handicap: formData.phd_handicap,
             academic_records: formData.academic_records,
             photo_path: formData.photo_path,
-            documents: formData.documents
+            documents: formData.documents,
+            how_did_you_know: formData.how_did_you_know
         }
         const { error } = await supabase.from('students').upsert(studentData, { onConflict: 'user_id' })
         if (error) console.error("Save Error:", error)
@@ -414,6 +427,11 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
 
     const uploadDoc = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!docType || isLocked) return
+        const finalDocType = docType === "Other" ? formData.other_doc_name : docType
+        if (!finalDocType) {
+            alert("Please enter document name")
+            return
+        }
         const file = e.target.files?.[0]; if (!file) return
         setIsUploadingDoc(true)
         try {
@@ -422,8 +440,9 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
             const path = `student_docs/${fileName}`
             const { error } = await supabase.storage.from('student_documents').upload(path, file)
             if (error) throw error
-            update("documents", [...formData.documents, { type: docType, path }])
+            update("documents", [...formData.documents, { type: finalDocType, path }])
             setDocType("")
+            update("other_doc_name", "")
             e.target.value = ""
         } catch { alert("Upload failed") }
         finally { setIsUploadingDoc(false) }
@@ -470,6 +489,35 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
     }
 
     const photoUrl = getPhotoUrl()
+
+    const getRequiredDocs = () => {
+        if (!metadata?.documentRequirements) return []
+        const reqs = metadata.documentRequirements
+        const activeDocs = new Set<string>()
+
+        // 1. Universal
+        const universal = reqs.find((r: any) => r.value === 'Universal')
+        if (universal) universal.metadata.docs.forEach((d: string) => activeDocs.add(d))
+
+        // 2. Admission Type (FY / DSY)
+        const typeReq = reqs.find((r: any) => r.value === formData.admission_type)
+        if (typeReq) typeReq.metadata.docs.forEach((d: string) => activeDocs.add(d))
+
+        // 3. Category
+        const catReq = reqs.find((r: any) => r.value === formData.admission_category)
+        if (catReq) catReq.metadata.docs.forEach((d: string) => activeDocs.add(d))
+
+        // 4. Scholarship
+        const schInfo = metadata.scholarshipCategories?.find((s: any) => s.id === formData.scholarship_category_id)
+        if (schInfo) {
+            const schReq = reqs.find((r: any) => r.value === schInfo.name)
+            if (schReq) schReq.metadata.docs.forEach((d: string) => activeDocs.add(d))
+        }
+
+        return Array.from(activeDocs)
+    }
+
+    const mandatoryDocs = getRequiredDocs()
 
     return (
         <div className="min-h-screen bg-[#F5F7FB] pb-28" style={{ fontFamily: "'Poppins', sans-serif" }}>
@@ -579,11 +627,55 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                             </div>
 
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <DD label="Scholarship Scheme" val={formData.scholarship_category_id} k="scholarship_category_id" opts={metadata?.scholarshipCategories} isObj icon={CreditCard} isLocked={isLocked} onChange={update} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <DD label="Scholarship Scheme" val={formData.scholarship_category_id} k="scholarship_category_id" opts={metadata?.scholarshipCategories} isObj icon={CreditCard} isLocked={isLocked} onChange={update} />
+                                    {formData.scholarship_category_id && (
+                                        <div className="flex items-start gap-1 pb-1 px-1">
+                                            <ShieldAlert size={10} className="text-amber-500 mt-0.5 shrink-0" />
+                                            <p className="text-[9px] font-medium text-amber-600 leading-tight italic">
+                                                Adds: {metadata?.documentRequirements?.find((r: any) => r.value === metadata.scholarshipCategories?.find((s: any) => s.id === formData.scholarship_category_id)?.name)?.metadata?.docs?.join(", ")}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                                 <DD label="Admission Type" val={formData.admission_type} k="admission_type" opts={metadata?.staticOptions?.admissionTypes} icon={CheckCircle} isLocked={isLocked} onChange={update} />
-                                <DD label="Admission Category" val={formData.admission_category} k="admission_category" opts={metadata?.staticOptions?.admissionCategories} icon={Info} isLocked={isLocked} onChange={update} />
+                                <div className="space-y-1 md:col-span-2">
+                                    <DD label="Admission Category" val={formData.admission_category} k="admission_category" opts={metadata?.staticOptions?.admissionCategories} icon={Info} isLocked={isLocked} onChange={update} />
+                                    {formData.admission_category && (
+                                        <div className="flex items-start gap-1 pb-1 px-1">
+                                            <ShieldAlert size={10} className="text-blue-500 mt-0.5 shrink-0" />
+                                            <p className="text-[9px] font-medium text-blue-600 leading-tight italic">
+                                                Adds: {metadata?.documentRequirements?.find((r: any) => r.value === formData.admission_category)?.metadata?.docs?.join(", ")}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+
+                            {/* Dynamic Summary Box */}
+                            {formData.admission_type && formData.admission_category && (
+                                <div className="mt-4 p-4 bg-[#F0F7FF] border border-[#2E75C7]/20 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <ShieldAlert size={16} className="text-[#1A3A6B]" />
+                                        <h4 className="text-[#1A3A6B] font-black text-[10px] uppercase tracking-widest">Registration Requirement Summary</h4>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {mandatoryDocs.map((doc: string) => (
+                                            <div 
+                                                key={doc} 
+                                                className="px-3 py-1 bg-white border border-[#2E75C7]/15 rounded-full text-[9px] font-light text-[#2E75C7] capitalize tracking-wide shadow-sm"
+                                                style={{ fontFamily: "'Poppins', sans-serif" }}
+                                            >
+                                                {doc.toLowerCase()}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="mt-3 text-[9px] text-gray-400 font-medium italic border-t border-[#2E75C7]/5 pt-2 uppercase tracking-tighter">
+                                        * Total {mandatoryDocs.length} documents identified for your {formData.admission_type} ({formData.admission_category}) profile.
+                                    </p>
+                                </div>
+                            )}
 
                             {formData.course_id && formData.academic_year_id && (
                                 <div className="my-3 bg-white border-2 border-[#2E75C7]/20 rounded-2xl overflow-hidden">
@@ -648,9 +740,11 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                                 <TF label="Religion" val={formData.religion} k="religion" icon={Info} isLocked={isLocked} onChange={update} />
                                 <TF label="Caste / Sub-Caste" val={formData.caste} k="caste" icon={Info} isLocked={isLocked} onChange={update} />
                                 <DD label="Blood Group" val={formData.blood_group} k="blood_group" opts={metadata?.staticOptions?.bloodGroups} icon={Info} isLocked={isLocked} onChange={update} />
-                                <TF label="Place of Birth" val={formData.place_of_birth} k="place_of_birth" icon={Home} isLocked={isLocked} onChange={update} />
+                                 <TF label="Place of Birth" val={formData.place_of_birth} k="place_of_birth" icon={Home} isLocked={isLocked} onChange={update} />
                                 <TF label="Native Place" val={formData.native_place} k="native_place" icon={Home} isLocked={isLocked} onChange={update} />
                                 <TF label="Aadhar No." val={formData.aadharCardNumber} k="aadharCardNumber" max={12} type="number" icon={Info} isLocked={isLocked} onChange={update} />
+                                <TF label="ABC ID" val={formData.abc_id} k="abc_id" icon={Info} isLocked={isLocked} onChange={update} />
+                                <TF label="APAAR ID" val={formData.apaar_id} k="apaar_id" icon={Info} isLocked={isLocked} onChange={update} />
                             </div>
                             <TF label="PAN No." val={formData.pan_no} k="pan_no" max={10} icon={Info} isLocked={isLocked} onChange={update} />
 
@@ -745,7 +839,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                                 <AcadTF label="Month & Year" val={formData.academic_records.ssc_year} k="ssc_year" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Seat No." val={formData.academic_records.ssc_seat} k="ssc_seat" isLocked={isLocked} onChange={updateAcademic} />
                             </div>
-                            <AcadTF label="Institute Name" val={formData.academic_records.ssc_inst} k="ssc_inst" isLocked={isLocked} onChange={updateAcademic} />
+                             <AcadTF label="Institute Name" val={formData.academic_records.ssc_inst} k="ssc_inst" isLocked={isLocked} onChange={updateAcademic} />
+                            <AcadTF label="Institute Address" val={formData.academic_records.ssc_inst_addr} k="ssc_inst_addr" isLocked={isLocked} onChange={updateAcademic} />
                             <AcadTF label="Board" val={formData.academic_records.ssc_board} k="ssc_board" isLocked={isLocked} onChange={updateAcademic} />
                             <div className="grid grid-cols-2 gap-3">
                                 <AcadTF label="Marks Obtained" val={formData.academic_records.ssc_obt} k="ssc_obt" type="number" isLocked={isLocked} onChange={updateAcademic} />
@@ -759,7 +854,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                                 <AcadTF label="Month & Year" val={formData.academic_records.hsc_year} k="hsc_year" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Seat No." val={formData.academic_records.hsc_seat} k="hsc_seat" isLocked={isLocked} onChange={updateAcademic} />
                             </div>
-                            <AcadTF label="Institute Name" val={formData.academic_records.hsc_inst} k="hsc_inst" isLocked={isLocked} onChange={updateAcademic} />
+                             <AcadTF label="Institute Name" val={formData.academic_records.hsc_inst} k="hsc_inst" isLocked={isLocked} onChange={updateAcademic} />
+                            <AcadTF label="Institute Address" val={formData.academic_records.hsc_inst_addr} k="hsc_inst_addr" isLocked={isLocked} onChange={updateAcademic} />
                             <AcadTF label="Board" val={formData.academic_records.hsc_board} k="hsc_board" isLocked={isLocked} onChange={updateAcademic} />
                             <div className="bg-[#2E75C7]/5 px-3 py-2 rounded-lg mb-3 border-l-2 border-[#2E75C7]">
                                 <span className="text-[#2E75C7] text-[10px] font-medium uppercase tracking-wide">Subject Marks (per 100)</span>
@@ -781,14 +877,16 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                                 <AcadTF label="Month & Year" val={formData.academic_records.dip_year} k="dip_year" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Seat No." val={formData.academic_records.dip_seat} k="dip_seat" isLocked={isLocked} onChange={updateAcademic} />
                             </div>
-                            <AcadTF label="Institute Name" val={formData.academic_records.dip_inst} k="dip_inst" isLocked={isLocked} onChange={updateAcademic} />
+                             <AcadTF label="Institute Name" val={formData.academic_records.dip_inst} k="dip_inst" isLocked={isLocked} onChange={updateAcademic} />
+                            <AcadTF label="Institute Address" val={formData.academic_records.dip_inst_addr} k="dip_inst_addr" isLocked={isLocked} onChange={updateAcademic} />
                             <AcadTF label="Board / University" val={formData.academic_records.dip_board} k="dip_board" isLocked={isLocked} onChange={updateAcademic} />
                             <AcadTF label="Aggregate %" val={formData.academic_records.dip_pct} k="dip_pct" isLocked={isLocked} onChange={updateAcademic} />
                         </Section>
 
                         <Section title="Direct Second Year (DSY)" icon={CheckCircle}>
-                            <div className="grid grid-cols-2 gap-3">
+                             <div className="grid grid-cols-2 gap-3">
                                 <AcadTF label="Institute" val={formData.academic_records.dsy_inst} k="dsy_inst" isLocked={isLocked} onChange={updateAcademic} />
+                                <AcadTF label="Institute Address" val={formData.academic_records.dsy_inst_addr} k="dsy_inst_addr" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Institute Code" val={formData.academic_records.dsy_code} k="dsy_code" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Board" val={formData.academic_records.dsy_branch} k="dsy_branch" isLocked={isLocked} onChange={updateAcademic} />
                                 <AcadTF label="Branch" val={formData.academic_records.dsy_code} k="dsy_code" isLocked={isLocked} onChange={updateAcademic} />
@@ -828,11 +926,38 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
 
                 {/* STEP 4: Documents */}
                 {currentStep === 4 && (
-                    <div>
+                    <div className="space-y-4">
+                        {/* Mandatory Checklist */}
+                        <Section title="Mandatory Submission Checklist" icon={ShieldAlert}>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                                {mandatoryDocs.map((docName: string) => {
+                                    const isUploaded = formData.documents.some((d: any) => (typeof d === 'string' ? d === docName : d.type === docName))
+                                    return (
+                                        <div 
+                                            key={docName} 
+                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 ${
+                                                isUploaded 
+                                                ? 'bg-green-50/50 border-green-200 text-green-700 shadow-sm' 
+                                                : 'bg-red-50/50 border-red-200 text-red-600 shadow-sm'
+                                            }`}
+                                            style={{ fontFamily: "'Poppins', sans-serif" }}
+                                        >
+                                            <div className={`w-1.5 h-1.5 rounded-full ${isUploaded ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
+                                            <span className="text-[10px] font-light tracking-wide capitalize">
+                                                {docName.toLowerCase()}
+                                            </span>
+                                            {isUploaded && <Check size={10} className="ml-auto text-green-600" />}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <p className="text-[9px] text-gray-400 font-medium italic mt-2 uppercase tracking-tighter">* All above documents are mandatory based on your Category and Scholarship selections.</p>
+                        </Section>
+
                         <Section title="Document Vault" icon={Folder}>
                             <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100 mb-4">
                                 <p className="text-[10px] font-medium text-blue-800 uppercase tracking-wide mb-3">Upload Documents</p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="relative">
                                         <select
                                             disabled={isLocked}
@@ -841,12 +966,21 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
                                             className="w-full h-11 rounded-xl border-2 border-blue-100 bg-white pl-3 pr-9 text-sm font-light text-[#1A3A6B] focus:border-[#2E75C7] outline-none appearance-none"
                                         >
                                             <option value="">Select document type</option>
-                                            {["Aadhar Card", "PAN Card", "SSC Marksheet", "HSC Marksheet", "Diploma Certificate", "Transfer Certificate", "Migration Certificate", "Income Certificate", "Caste Certificate", "Domicile Certificate", "Leaving Certificate", "Passport Size Photo"].map(v => (
+                                            {["Aadhar Card", "PAN Card", "SSC Marksheet", "HSC Marksheet", "Diploma Marksheet", "Diploma Passing Certificate", "MHT-CET Score Card", "NATA Score Card", "JEE Score Card", "Transfer Certificate", "Migration Certificate", "Income Certificate", "Caste Certificate", "Caste Validity", "Non-Creamy Layer", "EWS Certificate", "Domicile Certificate", "Leaving Certificate", "Minority Affidavit", "Passport Size Photo", "Other"].map(v => (
                                                 <option key={v} value={v}>{v}</option>
                                             ))}
                                         </select>
                                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
                                     </div>
+                                    {docType === "Other" && (
+                                        <input
+                                            type="text"
+                                            placeholder="Enter document name"
+                                            value={formData.other_doc_name}
+                                            onChange={e => update("other_doc_name", e.target.value)}
+                                            className="w-full h-11 rounded-xl border-2 border-blue-100 bg-white px-3 text-sm font-light text-[#1A3A6B] focus:border-[#2E75C7] outline-none"
+                                        />
+                                    )}
                                     {!isLocked && (
                                         <label className={`flex items-center justify-center gap-2 h-11 rounded-xl text-[11px] font-medium uppercase tracking-wide cursor-pointer transition-all ${docType ? 'bg-[#1A3A6B] text-white hover:bg-[#2E75C7] shadow-md' : 'bg-gray-100 text-gray-300 cursor-not-allowed pointer-events-none'}`}>
                                             {isUploadingDoc ? <RefreshCw className="animate-spin" size={15} /> : <Upload size={15} />}

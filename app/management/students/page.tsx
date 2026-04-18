@@ -92,6 +92,9 @@ interface StudentEnrollment {
   active_semester_id: number | null
   is_admission_verified: boolean
   is_enrollment_verified: boolean
+  scholarship_name: string | null
+  scholarship_amount: number
+  scholarship_category_id: string | null
 }
 
 // For filters
@@ -220,10 +223,12 @@ export default function StudentManagementPage() {
     string | null
   >(null)
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null)
+  const [selectedScholarshipCategory, setSelectedScholarshipCategory] = useState<string | null>(null)
 
   const [allStreams, setAllStreams] = useState<Stream[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [allAcademicYears, setAllAcademicYears] = useState<AcademicYear[]>([])
+  const [allScholarshipCategories, setAllScholarshipCategories] = useState<any[]>([])
 
   const [loadingFilters, setLoadingFilters] = useState(true)
 
@@ -259,6 +264,10 @@ export default function StudentManagementPage() {
       setError(null)
 
       try {
+        // --- ✅ CRITICAL FIX: To filter parent rows (students) based on child rows (enrollments), 
+        // we must use the !inner join syntax selectively.
+        const enrollJoin = selectedScholarshipCategory ? "student_academic_years!inner" : "student_academic_years"
+
         let query = supabase
           .from("students")
           .select(
@@ -274,6 +283,8 @@ export default function StudentManagementPage() {
             is_verifiedby_examcell,
             admission_year,
             current_sem_id,
+            scholarship_category_id,
+            scholarship_category:scholarship_categories!scholarship_category_id ( name ),
             course:courses ( id, name ),
             active_semesters: student_semesters!student_semesters_student_id_fkey (
                 id,
@@ -285,12 +296,20 @@ export default function StudentManagementPage() {
                 is_verifiedby_examcell,
                 semesters (id, name)
             ),
-            current_semester_details: semesters!current_sem_id (id, name),
-            enrollments:student_academic_years (
+            current_semester_details: semesters!current_sem_id (
+              id, 
+              name, 
+              academic_year_id,
+              academic_years ( id, name )
+            ),
+            enrollments:${enrollJoin} (
               id,
               academic_year_name,
               academic_year_session,
-              is_registered
+              is_registered,
+              scholarship_name,
+              scholarship_amount,
+              scholarship_category_id
             )
             `,
           )
@@ -311,14 +330,39 @@ export default function StudentManagementPage() {
             query = query.eq("course_id", selectedCourse)
           }
 
+          // Scholarship Category Filter
+          if (selectedScholarshipCategory) {
+            // Filter by the scholarship of the active academic year (enrollments)
+            // We use the alias 'enrollments' defined in the select statement
+            query = query.eq("enrollments.scholarship_category_id", selectedScholarshipCategory)
+          }
+
+          if (selectedSemester) {
+             query = query.eq("current_sem_id", selectedSemester)
+          }
+
           if (selectedAcademicYear) {
-             // If searching by specific year, we might need a more complex subquery or just filter flattened data
+             // 1. Fetch all semester IDs for this academic year first for reliable filtering
+             const { data: sems } = await supabase.from("semesters").select("id").eq("academic_year_id", selectedAcademicYear)
+             const semIds = sems?.map((s: any) => s.id) || []
+             if (semIds.length > 0) {
+               query = query.in("current_sem_id", semIds)
+             } else {
+               // If no semesters found for this year, return empty
+               query = query.eq("id", -1) // Unmatchable ID
+             }
           }
         }
 
+        // --- Administrative Exclusions ---
+        // Assuming roles or specific identifiers to hide internal accounts
+        query = query.not('fullname', 'ilike', '%admin%')
+        query = query.not('fullname', 'ilike', '%exam cell%')
+        query = query.not('fullname', 'ilike', '%profile%')
+
         // --- Search Queries ---
-        if (nameQuery) query = query.ilike("student.fullname", `%${nameQuery}%`)
-        if (rollQuery) query = query.ilike("student.roll_number", `%${rollQuery}%`)
+        if (nameQuery) query = query.ilike("fullname", `%${nameQuery}%`)
+        if (rollQuery) query = query.ilike("roll_number", `%${rollQuery}%`)
 
         const { data, error } = await query
         if (error) throw error
@@ -356,7 +400,10 @@ export default function StudentManagementPage() {
               is_registered: latestEnroll?.is_registered || !!activeSem,
               is_locked: item.is_locked ?? false,
               sequence: 0, 
-              semester_name: item.current_semester_details?.name || activeSem?.semesters?.name || "N/A"
+              semester_name: item.current_semester_details?.name || activeSem?.semesters?.name || "N/A",
+              scholarship_name: latestEnroll?.scholarship_name || item.scholarship_category?.name || null,
+              scholarship_amount: latestEnroll?.scholarship_amount || 0,
+              scholarship_category_id: latestEnroll?.scholarship_category_id || item.scholarship_category_id || null
             }
           })
 
@@ -382,6 +429,7 @@ export default function StudentManagementPage() {
       selectedCourse,
       selectedAcademicYear,
       selectedSemester,
+      selectedScholarshipCategory, // Fixed: Added missing dependency
       allAcademicYears,
     ],
   )
@@ -400,6 +448,9 @@ export default function StudentManagementPage() {
         if (streamData.data) setAllStreams(streamData.data as Stream[])
         if (courseData.data) setAllCourses(courseData.data as Course[])
         if (ayData.data) setAllAcademicYears(ayData.data as AcademicYear[])
+        
+        const { data: scholData } = await supabase.from("scholarship_categories").select("*")
+        if (scholData) setAllScholarshipCategories(scholData)
 
         const errors = [
           streamData.error,
@@ -460,6 +511,8 @@ export default function StudentManagementPage() {
     setSelectedStream(null)
     setSelectedCourse(null)
     setSelectedAcademicYear(null)
+    setSelectedScholarshipCategory(null)
+    setSelectedSemester(null)
     setStudentSearch("")
     setRollNumberSearch("")
     setGlobalFilter("")
@@ -661,6 +714,26 @@ export default function StudentManagementPage() {
           </div>
         </div>
       ),
+    },
+    {
+      accessorKey: "scholarship_category_id",
+      header: "Scholarship",
+      cell: ({ row }) => {
+        // Since we flatted the data, row.original has scholarship_name and scholarship_amount
+        const student = row.original
+        return (
+          <div className="flex flex-col">
+            <span className="text-[13px] font-medium text-slate-800">
+              {student.scholarship_name || "None"}
+            </span>
+            {student.scholarship_amount > 0 && (
+              <span className="text-[10px] text-orange-600 font-bold">
+                ₹{student.scholarship_amount.toLocaleString()}
+              </span>
+            )}
+          </div>
+        )
+      },
     },
     {
       accessorKey: "is_verifiedby_admin",
@@ -983,101 +1056,131 @@ export default function StudentManagementPage() {
 
       {/* 3. Data Table Card */}
       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Find Student</CardTitle>
-          {/* --- UPDATED: Filters + Search --- */}
-          <div className="py-4 space-y-4">
-            {/* Filter Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              <DropdownSelect
-                label="Filter by Stream"
-                options={streamOptions}
-                value={selectedStream}
-                onChange={handleStreamChange}
-                placeholder="All Streams..."
-                disabled={loadingFilters}
-              />
-              <DropdownSelect
-                label="Filter by Course"
-                options={courseOptions}
-                value={selectedCourse}
-                onChange={handleCourseChange}
-                placeholder="All Courses..."
-                disabled={loadingFilters || !selectedStream}
-              />
-              <DropdownSelect
-                label="Filter by Year"
-                options={academicYearOptions}
-                value={selectedAcademicYear}
-                onChange={handleAcademicYearChange}
-                placeholder="All Years..."
-                disabled={loadingFilters || !selectedCourse}
-              />
-            </div>
-
-            {/* Search Inputs and Action Buttons */}
-            <div className="flex flex-col md:flex-row gap-3 justify-between pt-2 items-end">
-              {/* Search Inputs */}
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:max-w-xl">
-                <div className="relative w-full">
-                  <Label htmlFor="name-search">Search by Name</Label>
-                  <Input
-                    id="name-search"
-                    type="search"
-                    placeholder="Search name..."
-                    className="w-full"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                  />
-                </div>
-                <div className="relative w-full">
-                  <Label htmlFor="roll-search">Search by Roll No.</Label>
-                  <Input
-                    id="roll-search"
-                    type="search"
-                    placeholder="Search roll number..."
-                    className="w-full"
-                    value={rollNumberSearch}
-                    onChange={(e) => setRollNumberSearch(e.target.value)}
-                  />
-                </div>
+        <CardHeader className="pb-3 border-b border-slate-200/60 bg-white">
+           <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                 <div className="p-2 bg-indigo-50 rounded-lg">
+                    <Filter className="h-4 w-4 text-indigo-600" />
+                 </div>
+                 <div>
+                    <CardTitle className="text-sm font-bold">Smart Filter Registry</CardTitle>
+                    <CardDescription className="text-[10px] font-medium uppercase tracking-wider">Multidimensional Student Search</CardDescription>
+                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 justify-end w-full md:w-auto">
-                {/* NEW: Export Button */}
-                <Button
-                  variant="outline"
-                  onClick={handleExportToExcel}
-                  disabled={loading || students.length === 0}
-                  className="bg-green-500 hover:bg-green-600 text-white"
-                >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export to XL
-                </Button>
-                {/* Clear Button */}
-                <Button
-                  variant="outline"
-                  onClick={handleFilterClear}
-                  disabled={loading}
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Clear
-                </Button>
-                {/* Search Button (Triggers fetch with all filters/search) */}
-                <Button onClick={handleFilterSearch} disabled={loading}>
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4 mr-2" />
-                  )}
-                  Search
-                </Button>
+              <div className="flex items-center gap-2">
+                 {/* NEW: Export Button */}
+                 <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportToExcel}
+                    disabled={loading || students.length === 0}
+                    className="h-8 rounded-lg text-[10px] font-bold uppercase tracking-wider border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                 >
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    Export XL
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm" 
+                   onClick={handleFilterClear}
+                   className="h-8 rounded-lg text-[10px] font-bold uppercase tracking-wider border-slate-200"
+                 >
+                    Reset
+                 </Button>
+                 <Button 
+                   size="sm" 
+                   onClick={handleFilterSearch}
+                   className="h-8 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-indigo-600 hover:bg-indigo-700"
+                 >
+                    Apply Filters
+                 </Button>
               </div>
-            </div>
-          </div>
+           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 bg-white/40">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Row 1 */}
+              <div className="space-y-1.5">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Stream / Branch</Label>
+                 <DropdownSelect
+                    label=""
+                    placeholder="Engineering Branch"
+                    options={streamOptions}
+                    value={selectedStream}
+                    onChange={handleStreamChange}
+                 />
+              </div>
+              <div className="space-y-1.5">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Specific Course</Label>
+                 <DropdownSelect
+                    label=""
+                    placeholder="Select Course"
+                    options={courseOptions}
+                    value={selectedCourse}
+                    onChange={handleCourseChange}
+                    disabled={!selectedStream}
+                 />
+              </div>
+              <div className="space-y-1.5">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Academic Year</Label>
+                 <DropdownSelect
+                    label=""
+                    placeholder="Year"
+                    options={academicYearOptions}
+                    value={selectedAcademicYear}
+                    onChange={handleAcademicYearChange}
+                    disabled={!selectedCourse}
+                 />
+              </div>
+              <div className="space-y-1.5">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Scholarship Type</Label>
+                 <DropdownSelect
+                    label=""
+                    placeholder="Select Scheme"
+                    options={allScholarshipCategories}
+                    value={selectedScholarshipCategory}
+                    onChange={(val) => setSelectedScholarshipCategory(val)}
+                 />
+              </div>
+
+              {/* Row 2 */}
+              <div className="lg:col-span-2">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Student Name</Label>
+                 <div className="relative mt-1.5">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input 
+                       placeholder="Enter full name..."
+                       className="pl-9 h-11 bg-white border-slate-200 rounded-xl text-sm"
+                       value={studentSearch}
+                       onChange={(e) => setStudentSearch(e.target.value)}
+                    />
+                 </div>
+              </div>
+              <div className="lg:col-span-2">
+                 <Label className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 ml-1">Roll Number</Label>
+                 <div className="relative mt-1.5">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input 
+                       placeholder="Enter roll no..."
+                       className="pl-9 h-11 bg-white border-slate-200 rounded-xl text-sm"
+                       value={rollNumberSearch}
+                       onChange={(e) => setRollNumberSearch(e.target.value)}
+                    />
+                 </div>
+              </div>
+           </div>
+        </CardContent>
+      </Card>
+
+      {/* 4. Student Registry Table */}
+      <Card className="shadow-lg border-slate-200/60 overflow-hidden">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-200/60 py-4">
+           <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <ListTodo className="h-4 w-4 text-indigo-600" />
+              Student Registry
+           </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
           <div className="rounded-md border">
             <Table>
               <TableHeader>

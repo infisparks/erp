@@ -103,6 +103,15 @@ export default function ProfilePage() {
     </div>
   )
 
+  if (!student) return (
+    <div className="min-h-screen bg-[#F5F7FB] flex flex-col items-center justify-center gap-4 px-10 text-center">
+      <AlertCircle className="text-orange-400" size={32} />
+      <p className="text-[#1A3A6B] font-black text-lg leading-tight">Profile Not Found</p>
+      <p className="text-gray-400 text-[10px] font-medium">We couldn't locate your academic record. Please complete your admission form.</p>
+      <Link href="/student/admission" className="px-6 py-2.5 bg-[#1A3A6B] text-white rounded-x text-[10px] font-black shadow-md">COMPLETE ADMISSION</Link>
+    </div>
+  )
+
   const supabase       = getSupabaseClient()
   const photoUrl       = student.photo_path
     ? supabase.storage.from("student_documents").getPublicUrl(student.photo_path).data.publicUrl
@@ -186,6 +195,7 @@ export default function ProfilePage() {
                     <InfoRow icon={User} label="Gender" value={student.gender} />
                     <InfoRow icon={HeartPulse} label="Metabolic" value={student.blood_group} />
                     <InfoRow icon={Shield} label="Aadhar" value={student.aadhar_card_number} />
+                    <InfoRow icon={Fingerprint} label="APAAR ID" value={student.apaar_id || "Not Linked"} />
                     <InfoRow icon={Building2} label="Region" value={student.religion} />
                   </ProfileCard>
                   <ProfileCard title="Residence" icon={MapPin}>
