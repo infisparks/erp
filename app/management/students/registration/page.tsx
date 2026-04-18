@@ -383,7 +383,7 @@ function StudentRegistrationPage() {
       if (updateError) throw updateError
 
       alert("Registration Successful!")
-      router.push("/management/students/fees") // or wherever you want to redirect
+      router.push("/management/students") // or wherever you want to redirect
     } catch (err: any) {
       console.error("Error submitting registration:", err)
       setError(`Failed to submit registration: ${err.message}`)

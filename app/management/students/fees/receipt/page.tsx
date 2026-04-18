@@ -424,7 +424,7 @@ function ReceiptPage() {
       <div className="p-4 md:p-8 bg-gray-100 min-h-screen print:bg-white">
         <div className="max-w-3xl mx-auto mb-4 flex justify-between print-hidden">
           <Button variant="outline" asChild>
-            <Link href="/management/students/fees">
+            <Link href="/management/students">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Fees
             </Link>

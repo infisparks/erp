@@ -909,7 +909,7 @@ function AddPaymentPage() {
                 {/* Form Actions */}
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="ghost" asChild>
-                    <Link href="/management/students/fees">
+                    <Link href="/management/students">
                       <X className="h-4 w-4 mr-2" />
                       Cancel
                     </Link>
@@ -938,7 +938,7 @@ function AddPaymentPage() {
           <CardHeader>
             <div className="flex items-center gap-2 mb-2">
               <Button variant="outline" size="icon" asChild>
-                <Link href="/management/students/fees">
+                <Link href="/management/students">
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               </Button>
