@@ -163,12 +163,12 @@ export default function StudentLoginPage() {
 
           {/* Social Links */}
           <div className="mt-10 pt-8 border-t border-slate-50 text-center">
-             <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                Need Credentials?{" "}
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                New User?{" "}
                 <Link href="/student/register" className="text-blue-600 hover:text-blue-800 transition-colors ml-1">
-                  Secure Enrollment
+                  Student Registration
                 </Link>
-             </p>
+              </p>
           </div>
         </div>
 

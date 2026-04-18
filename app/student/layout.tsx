@@ -20,7 +20,7 @@ export default function StudentLayout({
   const supabase = getSupabaseClient()
 
   // Define which routes should show the navigation elements (Sidebar, BottomNav, etc.)
-  const hideNavOnRoutes = ["/student/login", "/student/admission", "/student/edit-admission"]
+  const hideNavOnRoutes = ["/student/login", "/student/register", "/student/admission", "/student/edit-admission"]
   const showNav = !hideNavOnRoutes.includes(pathname)
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function StudentLayout({
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!session) {
-        if (pathname !== "/student/login") {
+        if (pathname !== "/student/login" && pathname !== "/student/register") {
           router.push("/student/login")
         }
         setIsVerifying(false)

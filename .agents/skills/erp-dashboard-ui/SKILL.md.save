@@ -1,0 +1,142 @@
+---
+name: erp-dashboard-ui
+description: Generates clean modern ERP/CRM dashboard UI with sidebar, tables, forms, and professional spacing. Use when building admin panels, contact lists, project management UI, or SaaS dashboards.
+---
+
+# ERP Dashboard UI Skill
+
+## 🎯 Design Goal
+
+Create a **clean, professional, modern dashboard UI** similar to CRM/ERP systems with:
+
+- Left sidebar navigation
+- Top header bar
+- Data tables with actions
+- Cards and stats
+- Forms with proper spacing
+- Soft colors and minimal design
+
+---
+
+## 🧠 When to use this skill
+
+- ERP system UI
+- Hospital management dashboard
+- CRM contact list
+- Admin panel
+- Project management UI
+- SaaS dashboard
+
+---
+
+## 🧱 Layout Structure
+
+### 1. Main Layout
+
+- Sidebar (fixed left)
+- Top navbar (search + profile)
+- Content area (right)
+
+```txt
+| Sidebar | Topbar |
+| Sidebar | Content |
+2. Sidebar Design
+Width: 240px
+Background: dark (#0f172a or similar)
+Text: light
+Active item: highlighted with background
+Icons + labels
+
+Menu Example:
+
+Dashboard
+Contacts
+Projects
+Reports
+Settings
+3. Topbar
+Search input (rounded)
+Right side:
+Notifications
+User avatar
+Height: ~60px
+Background: white
+📊 Table Design (IMPORTANT)
+
+Follow clean table UI like image:
+
+Row height: 56px+
+Padding: px-4 py-3
+Light borders (border-gray-200)
+Hover effect: bg-gray-50
+Rounded container
+
+Columns:
+
+Checkbox
+Name (with avatar)
+Status (badge)
+Owner (avatar group)
+Actions (dropdown)
+🧾 Form Design (Modal Style)
+Use modal or card
+Input spacing: mb-4
+Label above input
+Rounded inputs
+Soft borders
+
+Fields example:
+
+Name
+Date
+Dropdown
+Budget
+Description
+
+Buttons:
+
+Primary: blue
+Secondary: gray
+🎨 Design System
+Colors
+Primary: Blue (#2563eb)
+Background: #f8fafc
+Card: white
+Border: #e5e7eb
+Spacing
+Section padding: p-6
+Card padding: p-4
+Gap: gap-4 or gap-6
+Typography
+Title: text-xl font-semibold
+Label: text-sm text-gray-600
+Body: text-sm
+🧩 Components to Generate
+
+Always include:
+
+Sidebar component
+Header component
+Table component
+Card component
+Modal form
+Button variants
+⚡ UX Best Practices
+Keep UI minimal (no clutter)
+Use consistent spacing
+Align everything properly
+Use icons for clarity
+Avoid heavy colors
+Use shadows lightly
+📱 Responsiveness
+Sidebar collapses on mobile
+Table scrolls horizontally
+Stack cards on small screens
+🚀 Output Expectation
+
+When generating code:
+
+Use Next.js + Tailwind
+Create reusable components
+Keep code clean and modular
+Follow modern SaaS UI patterns

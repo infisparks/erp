@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "authoring-skills",
+  "owner": "vercel",
+  "repo": "next.js",
+  "path": ".agents/skills/authoring-skills",
+  "branch": "canary",
+  "sha": "e73ed10a121b10788b7fae705a4adf26c3db3615",
+  "source": "manual"
+}
