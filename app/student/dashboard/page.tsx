@@ -127,7 +127,7 @@ export default function StudentDashboard() {
           <div className="flex items-start gap-4">
             <div className="space-y-0.5">
                <p className="text-white/60 font-normal uppercase text-[8px] tracking-[0.2em] leading-none mb-1">AIKTC Student Portal</p>
-               <h2 className="text-2xl font-semibold text-white tracking-tighter leading-tight italic">
+               <h2 className="text-xl font-semibold text-white tracking-tight leading-tight">
                   {student?.fullname || "Student Name"}
                </h2>
                <div className="flex items-center gap-2">
