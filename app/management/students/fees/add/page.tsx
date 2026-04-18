@@ -80,7 +80,8 @@ interface StudentAcademicYearDetails {
   total_fee: number;
   scholarship_amount: number;
   is_registered: boolean;
-  total_tuition_paid: number; // --- ADDED: Pre-calculated sum
+  total_tuition_paid: number;
+  course_id: string | null; // --- ADDED: For tracking
 }
 
 interface Payment {
@@ -239,6 +240,24 @@ function AddPaymentPage() {
   const [paymentTypes, setPaymentTypes] = useState<FormOption[]>([])
   const [feesTypes, setFeesTypes] = useState<FormOption[]>([])
   const [bankNames, setBankNames] = useState<FormOption[]>([])
+  const [activeTab, setActiveTab] = useState("fees")
+
+  // --- Trust State ---
+  const [trusts, setTrusts] = useState<any[]>([])
+  const [trustTransactions, setTrustTransactions] = useState<any[]>([])
+
+  const trustBalances = useMemo(() => {
+    const balances: Record<string, number> = {}
+    trustTransactions.forEach(tx => {
+        const current = balances[tx.trust_id] || 0
+        if (tx.type === 'deposit') {
+            balances[tx.trust_id] = current + Number(tx.amount)
+        } else {
+            balances[tx.trust_id] = current - Number(tx.amount)
+        }
+    })
+    return balances
+  }, [trustTransactions])
 
   const [newPaymentData, setNewPaymentData] = useState({
     amount: '',
@@ -270,10 +289,12 @@ function AddPaymentPage() {
         const [
           studentResult,
           academicYearsResult,
-          allPaymentsResult, // --- NEW: Fetch all payments upfront
+          allPaymentsResult,
           paymentTypesResult,
           feesTypesResult,
-          bankNamesResult
+          bankNamesResult,
+          trustsResult,
+          trustTransactionsResult
         ] = await Promise.all([
           // 1. Fetch base student details
           supabase
@@ -294,6 +315,7 @@ function AddPaymentPage() {
               scholarship_amount,
               net_payable_fee,
               is_registered, 
+              course_id,
               course:courses ( name )
             `)
             .eq('student_id', studentId)
@@ -306,10 +328,12 @@ function AddPaymentPage() {
             .eq("student_id", studentId)
             .eq("fees_type", "Tuition Fee"),
 
-          // 4. Fetch Form Configs
+          // 4. Fetch Form Configs & Trusts
           supabase.from("form_config").select("data_jsonb").eq("data_name", "payment_types").single(),
           supabase.from("form_config").select("data_jsonb").eq("data_name", "fees_types").single(),
-          supabase.from("form_config").select("data_jsonb").eq("data_name", "bank_names").single()
+          supabase.from("form_config").select("data_jsonb").eq("data_name", "bank_names").single(),
+          supabase.from("trusts").select("id, name").order("name"),
+          supabase.from("trust_transactions").select("trust_id, type, amount")
         ]);
 
         // --- 1. Process Student Details ---
@@ -347,8 +371,8 @@ function AddPaymentPage() {
             total_fee: ay.total_fee || 0,
             scholarship_amount: ay.scholarship_amount || 0,
             is_registered: ay.is_registered || false,
-            // --- NEW: Add the pre-calculated sum, preferring the specific ID link ---
             total_tuition_paid: tuitionPaidByYearId[ay.id] || 0,
+            course_id: ay.course_id
           }));
           setAllAcademicYears(yearDetails);
         }
@@ -357,6 +381,8 @@ function AddPaymentPage() {
         if (paymentTypesResult.data) setPaymentTypes(paymentTypesResult.data.data_jsonb as FormOption[])
         if (feesTypesResult.data) setFeesTypes(feesTypesResult.data.data_jsonb as FormOption[])
         if (bankNamesResult.data) setBankNames(bankNamesResult.data.data_jsonb as FormOption[])
+        if (trustsResult.data) setTrusts(trustsResult.data)
+        if (trustTransactionsResult.data) setTrustTransactions(trustTransactionsResult.data)
 
       } catch (err: any) {
         console.error("Error fetching data:", err)
@@ -483,6 +509,20 @@ function AddPaymentPage() {
     setError(null)
     
     try {
+      // --- SMART Trust Fund Logic ---
+      let targetTrust = null;
+      let calculatedBalance = 0;
+      if (newPaymentData.payment_method === 'Trust') {
+        if (!newPaymentData.trust_id) throw new Error("Please select a trust fund.");
+        targetTrust = trusts.find(t => t.id === newPaymentData.trust_id);
+        calculatedBalance = trustBalances[newPaymentData.trust_id] || 0;
+        
+        if (!targetTrust) throw new Error("Selected trust fund not found.");
+        if (calculatedBalance < amount) {
+          throw new Error(`Insufficient trust balance. Available: ₹${calculatedBalance.toLocaleString()}`);
+        }
+      }
+
       const { data: newPayment, error: insertError } = await supabase
         .from("student_payments")
         .insert({
@@ -495,7 +535,7 @@ function AddPaymentPage() {
           bank_name: newPaymentData.bank_name || null,
           cheque_number: newPaymentData.cheque_number || null,
           transaction_id: newPaymentData.transaction_id || null,
-          trust_name: newPaymentData.trust_name || null,
+          trust_name: targetTrust?.name || newPaymentData.trust_name || null,
           trust_id: newPaymentData.trust_id || null,
           notes: newPaymentData.notes || null,
         })
@@ -504,6 +544,24 @@ function AddPaymentPage() {
         
       if (insertError) throw insertError
       
+      // --- Finalize Trust Transaction (Log only, no current_balance update) ---
+      if (newPayment && newPaymentData.payment_method === 'Trust' && targetTrust) {
+        // Log Trust Transaction (Balance is calculated dynamically)
+        const { error: logError } = await supabase.from('trust_transactions')
+          .insert({
+            trust_id: targetTrust.id,
+            type: 'payment',
+            amount: amount,
+            notes: `FEE: ${newPaymentData.fees_type} | ${newPaymentData.notes || 'Sponsorship'}`,
+            student_payment_id: newPayment.id,
+            related_student_id: student.id,
+            student_academic_year_id: selectedYearData.student_academic_year_id,
+            course_id: selectedYearData.course_id
+          });
+        
+        if (logError) console.error("Trust transaction log error:", logError);
+      }
+
       if (newPayment && newPayment.id) {
         router.push(`/management/students/fees/receipt?id=${newPayment.id}`);
       } else {
@@ -862,27 +920,27 @@ function AddPaymentPage() {
                 )}
 
                 {newPaymentData.payment_method === 'Trust' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border bg-muted rounded-lg">
+                  <div className="p-4 border bg-emerald-50/50 border-emerald-100 rounded-lg space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="trust_name" className="font-medium">Trust Name (Optional)</Label>
-                      <Input
-                        id="trust_name"
-                        name="trust_name"
-                        placeholder="Enter trust name"
-                        value={newPaymentData.trust_name}
-                        onChange={handlePaymentFormChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="trust_id" className="font-medium">Trust ID (Optional)</Label>
-                      <Input
-                        id="trust_id"
-                        name="trust_id"
-                        placeholder="Enter trust ID"
+                      <Label className="font-medium text-emerald-900 text-sm">Select Trust Fund*</Label>
+                      <SearchableSelect
+                        options={trusts.map(t => ({ 
+                          label: `${t.name} (Bal: ₹${parseFloat((trustBalances[t.id] || 0).toString()).toLocaleString()})`, 
+                          value: t.id 
+                        }))}
                         value={newPaymentData.trust_id}
-                        onChange={handlePaymentFormChange}
+                        onChange={(val) => handleSelectChange('trust_id', val || '')}
+                        placeholder="Search for a trust..."
                       />
                     </div>
+                    {newPaymentData.trust_id && trusts.find(t => t.id === newPaymentData.trust_id) && (
+                       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-emerald-100 shadow-sm animate-in fade-in zoom-in-95 duration-200">
+                          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <p className="text-[11px] font-black text-emerald-700 uppercase tracking-tight">
+                             Available Balance: ₹{parseFloat((trustBalances[newPaymentData.trust_id] || 0).toString()).toLocaleString()}
+                          </p>
+                       </div>
+                    )}
                   </div>
                 )}
 

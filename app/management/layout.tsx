@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 
 const NAV_ITEMS = [
   { 
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
     label: "Finance", 
     items: [
       { icon: IndianRupee, label: "Fees Setup", href: "/management/fees" },
+      { icon: Shield, label: "Trusts", href: "/management/trusts" },
     ]
   },
   { 
@@ -104,45 +106,32 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
 
       {/* ── Sidebar ─────────────────────────────────────── */}
       <aside className={cn(
-         "fixed lg:relative inset-y-0 left-0 z-50 flex flex-col bg-[#0F1923] transition-all duration-300 ease-in-out",
-         isCollapsed ? "w-[72px]" : "w-64",
+         "fixed lg:relative inset-y-0 left-0 z-50 flex flex-col bg-[#09090b] transition-all duration-300 ease-in-out border-r border-white/5",
+         isCollapsed ? "w-[78px]" : "w-[280px]",
          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       )}>
         
         {/* Brand */}
-        <div className={cn("flex items-center border-b border-white/5 h-16 px-4 flex-shrink-0", isCollapsed ? "justify-center" : "gap-3")}>
-          <div className="h-9 w-9 min-w-[36px] bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-900/30">
-            <span className="text-white font-black text-sm">E</span>
+        <div className={cn("flex items-center h-20 px-6 flex-shrink-0", isCollapsed ? "justify-center" : "gap-3")}>
+          <div className="h-10 w-10 min-w-[40px] bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 rotate-3 group-hover:rotate-0 transition-transform">
+            <Shield className="text-white h-5 w-5" />
           </div>
           {!isCollapsed && (
-            <div className="overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200">
-              <p className="text-white font-bold text-sm leading-none">ERP Portal</p>
-              <p className="text-white/30 text-[9px] uppercase tracking-widest mt-0.5">Management Suite</p>
+            <div className="overflow-hidden animate-in fade-in slide-in-from-left-3 duration-300">
+              <p className="text-white font-black text-lg tracking-tight leading-none">TRUST<span className="text-emerald-500">ERP</span></p>
+              <p className="text-white/20 text-[9px] font-black uppercase tracking-[0.3em] mt-1">Institutional OS</p>
             </div>
-          )}
-          {!isCollapsed && (
-            <button onClick={() => setMobileOpen(false)} className="ml-auto lg:hidden text-white/30 hover:text-white">
-              <X size={18} />
-            </button>
           )}
         </div>
 
-        {/* Collapse Toggle (desktop) */}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden lg:flex absolute -right-3 top-20 h-6 w-6 bg-[#0F1923] border border-white/10 rounded-full items-center justify-center text-white/40 hover:text-emerald-400 transition-colors z-50"
-        >
-          {isCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
-        </button>
-
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-hide space-y-6">
+        <nav className="flex-1 overflow-y-auto py-6 px-4 scrollbar-hide space-y-8">
           {NAV_ITEMS.map((group) => (
-            <div key={group.label}>
+            <div key={group.label} className="space-y-3">
               {!isCollapsed && (
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/20 px-3 mb-2">{group.label}</p>
+                 <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/15 px-4 mb-2">{group.label}</p>
               )}
-              <div className="space-y-0.5">
+              <div className="space-y-1">
                 {group.items.map((item) => {
                   const active = pathname === item.href || pathname.startsWith(item.href + "/")
                   return (
@@ -151,19 +140,19 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
                       href={item.href}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        "group flex items-center h-10 rounded-xl transition-all duration-200",
-                        isCollapsed ? "justify-center px-0" : "gap-3 px-3",
+                        "group flex items-center h-12 rounded-2xl transition-all duration-200",
+                        isCollapsed ? "justify-center px-0" : "gap-4 px-4",
                         active
-                          ? "bg-emerald-500/15 text-emerald-400"
+                          ? "bg-white/10 text-white shadow-sm ring-1 ring-white/10"
                           : "text-white/40 hover:text-white/80 hover:bg-white/5"
                       )}
                     >
-                      <item.icon size={16} className={cn("flex-shrink-0 transition-colors", active ? "text-emerald-400" : "text-white/30 group-hover:text-white/70")} />
+                      <item.icon size={18} className={cn("flex-shrink-0 transition-colors", active ? "text-emerald-400" : "text-white/20 group-hover:text-white/60")} />
                       {!isCollapsed && (
-                        <span className={cn("text-[13px] font-semibold truncate", active && "font-bold")}>{item.label}</span>
+                        <span className={cn("text-sm font-semibold tracking-tight", active && "font-bold")}>{item.label}</span>
                       )}
                       {!isCollapsed && active && (
-                        <div className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        <div className="ml-auto h-5 w-1 bg-emerald-500 rounded-full" />
                       )}
                     </Link>
                   )
@@ -174,19 +163,19 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
         </nav>
 
         {/* User Card */}
-        <div className="p-3 border-t border-white/5 flex-shrink-0">
-          <div className={cn("flex items-center rounded-xl p-2.5 bg-white/5", isCollapsed ? "justify-center" : "gap-3")}>
-            <div className="h-8 w-8 min-w-[32px] rounded-lg bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-sm">
+        <div className="p-4 border-t border-white/5 flex-shrink-0">
+          <div className={cn("flex items-center rounded-[24px] p-3 bg-white/5 border border-white/5", isCollapsed ? "justify-center" : "gap-3")}>
+            <div className="h-10 w-10 min-w-[40px] rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-white font-black text-sm shadow-xl shadow-emerald-900/40">
               {mgmtUser?.fullname?.charAt(0) || "A"}
             </div>
             {!isCollapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold text-white/80 truncate leading-none">{mgmtUser?.fullname || "Admin"}</p>
-                  <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">Staff</p>
+                  <p className="text-[12px] font-bold text-white/90 truncate leading-none">{mgmtUser?.fullname || "Administrator"}</p>
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-none text-[8px] font-black uppercase tracking-widest mt-1 px-1.5 h-4">System Master</Badge>
                 </div>
-                <button onClick={handleLogout} className="h-7 w-7 flex items-center justify-center text-white/20 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all">
-                  <LogOut size={14} />
+                <button onClick={handleLogout} className="h-9 w-9 flex items-center justify-center text-white/20 hover:text-red-400 rounded-xl hover:bg-red-500/10 transition-all">
+                  <LogOut size={16} />
                 </button>
               </>
             )}
@@ -197,35 +186,50 @@ export default function ManagementLayout({ children }: { children: React.ReactNo
       {/* ── Main Area ────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Topbar */}
-        <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-6 z-20 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMobileOpen(true)} className="lg:hidden h-9 w-9 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-lg">
+        {/* Modern Topbar */}
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-8 z-20 flex-shrink-0 sticky top-0">
+          <div className="flex items-center gap-6">
+            <button onClick={() => setMobileOpen(true)} className="lg:hidden h-10 w-10 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-xl border border-slate-200">
               <Menu size={20} />
             </button>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Management Portal</p>
-              <h1 className="text-sm font-bold text-slate-800 capitalize">{currentPageLabel}</h1>
+            <div className="hidden sm:block">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">
+                 <span>Portal</span>
+                 <ChevronRight size={10} />
+                 <span className="text-emerald-600">Active Node</span>
+              </div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight capitalize leading-none">{currentPageLabel}</h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button className="h-9 px-3 sm:px-4 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg flex items-center gap-2 text-xs font-semibold transition-all border border-slate-100 hover:border-slate-200">
-              <Search size={14} /> <span className="hidden sm:inline">Search</span>
+          <div className="flex items-center gap-3">
+            <div className="relative hidden md:block group">
+               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+               <input 
+                  type="text" 
+                  placeholder="Global Audit Search..." 
+                  className="h-11 w-64 bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 text-xs font-bold text-slate-600 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500/20 transition-all"
+               />
+               <div className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-black text-slate-300 shadow-sm">
+                  CMD K
+               </div>
+            </div>
+            
+            <button className="h-11 w-11 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300 rounded-2xl flex items-center justify-center transition-all group relative">
+              <Bell size={18} />
+              <div className="absolute top-3 right-3 h-2 w-2 bg-red-500 rounded-full border-2 border-white" />
             </button>
-            <button className="h-9 w-9 bg-white border border-slate-100 text-slate-400 hover:text-slate-600 rounded-lg flex items-center justify-center transition-all">
-              <Bell size={16} />
-            </button>
-            <div className="flex items-center gap-2 h-9 px-2 sm:px-3 bg-emerald-50 text-emerald-700 text-[10px] sm:text-xs font-bold rounded-lg border border-emerald-100 italic">
-              <div className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="hidden xs:inline">Live</span>
+
+            <div className="h-11 px-4 bg-slate-900 text-white rounded-2xl flex items-center gap-3 border shadow-lg shadow-slate-200 transition-all hover:scale-105 active:scale-95 cursor-pointer">
+               <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse shadow-glow shadow-emerald-500" />
+               <span className="text-[10px] font-black uppercase tracking-[0.1em]">Verified Node</span>
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto">
+        {/* Content Area */}
+        <main className="flex-1 overflow-y-auto bg-[#FAFAFA] p-8 lg:p-12">
+          <div className="max-w-[1400px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
             {children}
           </div>
         </main>

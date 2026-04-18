@@ -417,8 +417,9 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
         const file = e.target.files?.[0]; if (!file) return
         setIsUploadingDoc(true)
         try {
-            const fileName = `${user.id}_${Date.now()}_${file.name}`
-            const path = `student_docs/${encodeURIComponent(fileName)}`
+            const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+            const fileName = `${user.id}_${Date.now()}_${cleanName}`
+            const path = `student_docs/${fileName}`
             const { error } = await supabase.storage.from('student_documents').upload(path, file)
             if (error) throw error
             update("documents", [...formData.documents, { type: docType, path }])
@@ -439,7 +440,8 @@ export default function AdmissionForm({ user, onSuccess }: { user: any, onSucces
         const file = e.target.files?.[0]; if (!file) return
         setIsUploadingPhoto(true)
         try {
-            const path = `profile_photos/${encodeURIComponent(`photo_${user.id}_${Date.now()}.${file.name.split('.').pop()}`)}`
+            const fileExt = file.name.split('.').pop()
+            const path = `profile_photos/photo_${user.id}_${Date.now()}.${fileExt}`
             const { error } = await supabase.storage.from('student_documents').upload(path, file)
             if (error) throw error
             update("photo_path", path)

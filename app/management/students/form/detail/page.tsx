@@ -72,6 +72,7 @@ import {
     ShieldCheck,
     ShieldAlert,
     CheckSquare,
+    ExternalLink,
 } from "lucide-react"
 
 // --- Type Definitions ---
@@ -162,7 +163,22 @@ interface StudentDetail {
         net_payable_fee: number | null;
     } | null;
 
-    [key: string]: any 
+    academic_records: {
+        ssc_year: string; ssc_seat: string; ssc_inst: string; ssc_board: string; ssc_obt: string; ssc_out: string; ssc_pct: string;
+        hsc_year: string; hsc_seat: string; hsc_inst: string; hsc_board: string; hsc_phy: string; hsc_math: string; hsc_chem: string; hsc_obt: string; hsc_out: string; hsc_pct: string;
+        dip_year: string; dip_seat: string; dip_inst: string; dip_board: string; dip_pct: string;
+        dsy_inst: string; dsy_code: string; dsy_branch: string; dsy_obt: string; dsy_out: string;
+        cet_seat: string; cet_pct: string; jee_seat: string; jee_total: string; nata_seat: string; nata_obt: string; nata_out: string;
+    } | null;
+    correspondence_details: { taluka: string; district: string; } | null;
+    permanent_details: {
+        address: string; city: string; state: string; zipcode: string; taluka: string; district: string;
+    } | null;
+    native_place: string | null;
+    mother_email: string | null;
+    father_email: string | null;
+    admission_category: string | null;
+    [key: string]: any 
 }
 
 interface FileToAdd {
@@ -370,7 +386,8 @@ const StudentAvatar: React.FC<{ src: string | null, alt: string | null }> = ({ s
     const supabase = getSupabaseClient()
     const publicUrl = useMemo(() => {
         if (!src) return null;
-        return supabase.storage.from('student_documents').getPublicUrl(src).data.publicUrl;
+        const cleanSrc = src.includes('%') ? decodeURIComponent(src) : src;
+        return supabase.storage.from('student_documents').getPublicUrl(cleanSrc).data.publicUrl;
     }, [src, supabase]);
 
     return (
@@ -591,12 +608,46 @@ function StudentDetailContent() {
     }, [studentId, supabase]) // 🚀 Removed enrollmentId and academicYearId
 
 
+    // --- 🚀 Nested Field Handlers 🚀 ---
+    const handleAcademicChange = (name: string, value: string) => {
+        setEditFormData(prev => ({
+            ...prev,
+            academic_records: {
+                ...(prev.academic_records as any || {}),
+                [name]: value,
+            }
+        }))
+    }
+
+    const handleCorrespondenceChange = (name: string, value: string) => {
+        setEditFormData(prev => ({
+            ...prev,
+            correspondence_details: {
+                ...(prev.correspondence_details as any || {}),
+                [name]: value,
+            }
+        }))
+    }
+
+    const handlePermanentChange = (name: string, value: string) => {
+        setEditFormData(prev => ({
+            ...prev,
+            permanent_details: {
+                ...(prev.permanent_details as any || {}),
+                [name]: value,
+            }
+        }))
+    }
+
     // --- Document Viewer Handler ---
     const handleViewDocument = (doc: StudentDocument) => {
+        // Decode path in case it was stored URL-encoded
+        const cleanPath = doc.path.includes('%') ? decodeURIComponent(doc.path) : doc.path;
+        
         const { data: { publicUrl } } = supabase
             .storage
             .from('student_documents')
-            .getPublicUrl(doc.path);
+            .getPublicUrl(cleanPath);
         
         setViewingDoc({ doc, publicUrl });
         setIsViewerOpen(true);
@@ -788,6 +839,15 @@ function StudentDetailContent() {
                 how_did_you_know: editFormData.how_did_you_know,
                 roll_number: editFormData["rollNumber"],
                 
+                // New Fields from Admission Form
+                academic_records: editFormData.academic_records,
+                correspondence_details: editFormData.correspondence_details,
+                permanent_details: editFormData.permanent_details,
+                native_place: editFormData.native_place,
+                mother_email: editFormData.mother_email,
+                father_email: editFormData.father_email,
+                admission_category: editFormData.admission_category,
+                
                 // Enrollment Sync
                 course_id: editFormData.academic_year_data?.course_id,
                 admission_year_id: editFormData.student_academic_year_id,
@@ -871,9 +931,14 @@ function StudentDetailContent() {
 
         if (studentData.photo_path) {
             try {
+                // Decode path in case it was stored URL-encoded
+                const cleanPhotoPath = studentData.photo_path.includes('%') 
+                    ? decodeURIComponent(studentData.photo_path) 
+                    : studentData.photo_path;
+
                 const { data: blob, error } = await supabase.storage
                     .from('student_documents')
-                    .download(studentData.photo_path);
+                    .download(cleanPhotoPath);
                 
                 if (error) throw error;
 
@@ -1010,6 +1075,7 @@ function StudentDetailContent() {
             ["Caste", student.caste],
             ["Nationality", student.nationality],
             ["Place of Birth", student.place_of_birth],
+            ["Native Place", student.native_place],
             ["Domicile", student.domicile_of_maharashtra],
             ["PHD/Handicap", student.phd_handicap],
         ]);
@@ -1020,18 +1086,29 @@ function StudentDetailContent() {
             ["Father's Mobile", student.father_mobile_no],
             ["Father's Occupation", student.father_occupation],
             ["Father's Income", student.father_annual_income],
+            ["Father's Income", student.father_annual_income],
+            ["Father's Email", student.father_email],
             ["Mother's Name", student.mother_name],
             ["Mother's Mobile", student.mother_mobile_no],
             ["Mother's Occupation", student.mother_occupation],
             ["Mother's Income", student.mother_annual_income],
+            ["Mother's Email", student.mother_email],
         ]);
         
         // --- 8. Address Details ---
-        addSection("Address Details", [
-            ["Address", student.address],
-            ["City", student.city],
-            ["State", student.state],
-            ["ZIP Code", student.zipcode],
+         addSection("Address Details", [
+            ["Corr. Address", student.address],
+            ["Corr. City", student.city],
+            ["Corr. State", student.state],
+            ["Corr. ZIP", student.zipcode],
+            ["Corr. Taluka", student.correspondence_details?.taluka],
+            ["Corr. District", student.correspondence_details?.district],
+            ["Perm. Address", student.permanent_details?.address],
+            ["Perm. City", student.permanent_details?.city],
+            ["Perm. State", student.permanent_details?.state],
+            ["Perm. ZIP", student.permanent_details?.zipcode],
+            ["Perm. Taluka", student.permanent_details?.taluka],
+            ["Perm. District", student.permanent_details?.district],
         ]);
 
         // --- 9. Application & Category Details ---
@@ -1039,11 +1116,43 @@ function StudentDetailContent() {
             ["Form No.", student.form_no],
             ["Registration No.", student.registration_no],
             ["Merit No.", student.merit_no],
-            ["Admission Year", student.admission_year],
+             ["Admission Year", student.admission_year],
             ["Admission Type", student.admission_type],
-            ["Admission Type", student.admission_type],
+            ["Adm. Category", student.admission_category],
             ["Category Type", student.category_type],
+            ["Scholarship", student.scholarship_categories?.name],
         ]);
+
+        // --- 10. Academic History ---
+        const acad = student.academic_records;
+        if (acad) {
+            const acadRows: (string | null)[][] = [];
+            if (acad.ssc_year) {
+                acadRows.push(["SSC Year", acad.ssc_year], ["SSC %", acad.ssc_pct]);
+            }
+            if (acad.hsc_year) {
+                acadRows.push(["HSC Year", acad.hsc_year], ["HSC %", acad.hsc_pct]);
+            }
+            if (acad.dip_year) {
+                acadRows.push(["Diploma Year", acad.dip_year], ["Dip. %", acad.dip_pct]);
+            }
+            if (acad.dsy_inst) {
+                acadRows.push(["DSY Inst", acad.dsy_inst], ["DSY Branch", acad.dsy_branch]);
+            }
+            if (acad.cet_seat) {
+                acadRows.push(["MHT-CET Seat", acad.cet_seat], ["CET %", acad.cet_pct]);
+            }
+            if (acad.jee_seat) {
+                acadRows.push(["JEE Seat", acad.jee_seat], ["JEE Score", acad.jee_total]);
+            }
+            if (acad.nata_seat) {
+                acadRows.push(["NATA Seat", acad.nata_seat], ["NATA Marks", acad.nata_obt]);
+            }
+            
+            if (acadRows.length > 0) {
+                addSection("Academic History", acadRows);
+            }
+        }
 
         // --- 10. Additional Information ---
         if (student.custom_data && Object.keys(student.custom_data).length > 0) {
@@ -1135,15 +1244,135 @@ function StudentDetailContent() {
 
                     <AccordionItem value="item-4">
                         <AccordionTrigger className="text-lg font-semibold">Address Details</AccordionTrigger>
-                        <AccordionContent className="pt-4 space-y-4">
-                            <DetailItem label="Address Line" value={student.address} />
-                            <DetailItem label="City" value={student.city} />
-                            <DetailItem label="State" value={student.state} />
-                            <DetailItem label="ZIP Code" value={student.zipcode} />
+                        <AccordionContent className="pt-4 space-y-6">
+                            <div className="space-y-4">
+                                <h4 className="font-semibold text-primary/80 border-b pb-1">Correspondence Address</h4>
+                                <DetailItem label="Address" value={student.address} />
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                    <DetailItem label="City" value={student.city} />
+                                    <DetailItem label="State" value={student.state} />
+                                    <DetailItem label="ZIP Code" value={student.zipcode} />
+                                    <DetailItem label="Taluka" value={student.correspondence_details?.taluka} />
+                                    <DetailItem label="District" value={student.correspondence_details?.district} />
+                                </div>
+                            </div>
+                            
+                            <Separator />
+                            
+                            <div className="space-y-4">
+                                <h4 className="font-semibold text-primary/80 border-b pb-1">Permanent Address</h4>
+                                <DetailItem label="Address" value={student.permanent_details?.address} />
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                    <DetailItem label="City" value={student.permanent_details?.city} />
+                                    <DetailItem label="State" value={student.permanent_details?.state} />
+                                    <DetailItem label="ZIP Code" value={student.permanent_details?.zipcode} />
+                                    <DetailItem label="Taluka" value={student.permanent_details?.taluka} />
+                                    <DetailItem label="District" value={student.permanent_details?.district} />
+                                </div>
+                            </div>
                         </AccordionContent>
                     </AccordionItem>
 
                     <AccordionItem value="item-5">
+                        <AccordionTrigger className="text-lg font-semibold">Academic History</AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-6">
+                            {/* SSC Section */}
+                            <div className="space-y-4">
+                                <h4 className="font-semibold text-primary/80 border-b pb-1">SSC (10th Standard)</h4>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                    <DetailItem label="Year" value={student.academic_records?.ssc_year} />
+                                    <DetailItem label="Board" value={student.academic_records?.ssc_board} />
+                                    <DetailItem label="Institute" value={student.academic_records?.ssc_inst} />
+                                    <DetailItem label="Seat No." value={student.academic_records?.ssc_seat} />
+                                    <DetailItem label="Marks" value={`${student.academic_records?.ssc_obt} / ${student.academic_records?.ssc_out}`} />
+                                    <DetailItem label="Percentage" value={student.academic_records?.ssc_pct ? `${student.academic_records.ssc_pct}%` : "N/A"} />
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* HSC Section */}
+                            <div className="space-y-4">
+                                <h4 className="font-semibold text-primary/80 border-b pb-1">HSC (12th Standard)</h4>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                    <DetailItem label="Year" value={student.academic_records?.hsc_year} />
+                                    <DetailItem label="Board" value={student.academic_records?.hsc_board} />
+                                    <DetailItem label="Institute" value={student.academic_records?.hsc_inst} />
+                                    <DetailItem label="Seat No." value={student.academic_records?.hsc_seat} />
+                                    <DetailItem label="Physics" value={student.academic_records?.hsc_phy} />
+                                    <DetailItem label="Maths" value={student.academic_records?.hsc_math} />
+                                    <DetailItem label="Chemistry" value={student.academic_records?.hsc_chem} />
+                                    <DetailItem label="Marks" value={`${student.academic_records?.hsc_obt} / ${student.academic_records?.hsc_out}`} />
+                                    <DetailItem label="Percentage" value={student.academic_records?.hsc_pct ? `${student.academic_records.hsc_pct}%` : "N/A"} />
+                                </div>
+                            </div>
+
+                            {(student.academic_records?.dip_year || student.academic_records?.dip_pct) && (
+                                <>
+                                    <Separator />
+                                    <div className="space-y-4">
+                                        <h4 className="font-semibold text-primary/80 border-b pb-1">Diploma Details</h4>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                            <DetailItem label="Year" value={student.academic_records?.dip_year} />
+                                            <DetailItem label="Board" value={student.academic_records?.dip_board} />
+                                            <DetailItem label="Institute" value={student.academic_records?.dip_inst} />
+                                            <DetailItem label="Seat No." value={student.academic_records?.dip_seat} />
+                                            <DetailItem label="Percentage" value={student.academic_records?.dip_pct ? `${student.academic_records.dip_pct}%` : "N/A"} />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {(student.academic_records?.dsy_inst || student.academic_records?.dsy_branch) && (
+                                <>
+                                    <Separator />
+                                    <div className="space-y-4">
+                                        <h4 className="font-semibold text-primary/80 border-b pb-1">Direct Second Year (DSY)</h4>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                                            <DetailItem label="Institute" value={student.academic_records?.dsy_inst} />
+                                            <DetailItem label="Code" value={student.academic_records?.dsy_code} />
+                                            <DetailItem label="Branch" value={student.academic_records?.dsy_branch} />
+                                            <DetailItem label="Marks" value={student.academic_records?.dsy_obt ? `${student.academic_records.dsy_obt} / ${student.academic_records.dsy_out}` : "N/A"} />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="item-entrance">
+                        <AccordionTrigger className="text-lg font-semibold">Entrance Exam Records</AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* CET */}
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">MHT-CET</h4>
+                                    <div className="p-3 bg-muted rounded-lg space-y-2">
+                                        <DetailItem label="Seat No." value={student.academic_records?.cet_seat} />
+                                        <DetailItem label="Percentile" value={student.academic_records?.cet_pct} />
+                                    </div>
+                                </div>
+                                {/* JEE */}
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">JEE Main</h4>
+                                    <div className="p-3 bg-muted rounded-lg space-y-2">
+                                        <DetailItem label="Seat No." value={student.academic_records?.jee_seat} />
+                                        <DetailItem label="Total Score" value={student.academic_records?.jee_total} />
+                                    </div>
+                                </div>
+                                {/* NATA */}
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">NATA</h4>
+                                    <div className="p-3 bg-muted rounded-lg space-y-2">
+                                        <DetailItem label="Seat No." value={student.academic_records?.nata_seat} />
+                                        <DetailItem label="Marks" value={`${student.academic_records?.nata_obt} / ${student.academic_records?.nata_out}`} />
+                                    </div>
+                                </div>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="item-6">
                         <AccordionTrigger className="text-lg font-semibold">Application & Category Details</AccordionTrigger>
                         <AccordionContent className="pt-4 space-y-4">
                             <DetailItem label="Form No." value={student.form_no} />
@@ -1151,8 +1380,10 @@ function StudentDetailContent() {
                             <DetailItem label="Merit No." value={student.merit_no} />
                             <DetailItem label="Admission Year" value={student.admission_year} />
                             <DetailItem label="Admission Type" value={student.admission_type} />
-                            <DetailItem label="Admission Type" value={student.admission_type} />
+                            <DetailItem label="Admission Category" value={student.admission_category} />
                             <DetailItem label="Category Type" value={student.category_type} />
+                            <DetailItem label="Scholarship" value={student.scholarship_categories?.name} />
+                            <DetailItem label="Source of Info" value={student.how_did_you_know} />
                         </AccordionContent>
                     </AccordionItem>
 
@@ -1207,6 +1438,7 @@ function StudentDetailContent() {
             <Tabs value={activeEditTab} onValueChange={setActiveEditTab} className="w-full">
                 <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1 mb-4 bg-muted/50 rounded-lg">
                     <TabsTrigger value="personal" className="flex-1 text-[10px] sm:text-sm py-2">Personal</TabsTrigger>
+                    <TabsTrigger value="academic" className="flex-1 text-[10px] sm:text-sm py-2">Academic</TabsTrigger>
                     <TabsTrigger value="admission" className="flex-1 text-[10px] sm:text-sm py-2">Enrollment</TabsTrigger>
                     <TabsTrigger value="application" className="flex-1 text-[10px] sm:text-sm py-2">Application</TabsTrigger>
                     <TabsTrigger value="docs" className="flex-1 text-[10px] sm:text-sm py-2">Documents</TabsTrigger>
@@ -1226,9 +1458,13 @@ function StudentDetailContent() {
                                 <FormDatePickerGroup label="Date of Birth" date={editFormDateOfBirth} setDate={setEditFormDateOfBirth} required />
                                 <FormSelectGroup label="Gender" name="gender" value={editFormData.gender} onValueChange={(val: string) => handleEditSelectChange("gender", val)} options={genderOptions} placeholder="Select gender" />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Email Address" name="email" type="email" value={editFormData.email || ""} onChange={handleEditChange} required />
                                 <FormInputGroup label="Roll Number" name="rollNumber" value={editFormData['rollNumber'] || ""} onChange={handleEditChange} required />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Place of Birth" name="place_of_birth" value={editFormData.place_of_birth || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Native Place" name="native_place" value={editFormData.native_place || ""} onChange={handleEditChange} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormInputGroup label="Primary Phone" name="phone" type="tel" value={editFormData.phone || ""} onChange={handleEditChange} required />
@@ -1241,10 +1477,9 @@ function StudentDetailContent() {
                     <Card>
                         <CardHeader><CardTitle>Identity & Background</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Blood Group" name="blood_group" value={editFormData.blood_group || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Nationality" name="nationality" value={editFormData.nationality || ""} onChange={handleEditChange} />
-                                <FormInputGroup label="Place of Birth" name="place_of_birth" value={editFormData.place_of_birth || ""} onChange={handleEditChange} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Religion" name="religion" value={editFormData.religion || ""} onChange={handleEditChange} />
@@ -1264,16 +1499,18 @@ function StudentDetailContent() {
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormInputGroup label="Father's Name" name="father_name" value={editFormData.father_name || ""} onChange={handleEditChange} />
-                                <FormInputGroup label="Father's Occupation" name="father_occupation" value={editFormData.father_occupation || ""} onChange={handleEditChange} />
+                                 <FormInputGroup label="Father's Occupation" name="father_occupation" value={editFormData.father_occupation || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Father's Annual Income" name="father_annual_income" value={editFormData.father_annual_income || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Father's Mobile" name="father_mobile_no" type="tel" value={editFormData.father_mobile_no || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Father's Email" name="father_email" type="email" value={editFormData.father_email || ""} onChange={handleEditChange} />
                             </div>
                             <Separator />
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Mother's Name" name="mother_name" value={editFormData.mother_name || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Mother's Occupation" name="mother_occupation" value={editFormData.mother_occupation || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Mother's Annual Income" name="mother_annual_income" value={editFormData.mother_annual_income || ""} onChange={handleEditChange} />
                                 <FormInputGroup label="Mother's Mobile" name="mother_mobile_no" type="tel" value={editFormData.mother_mobile_no || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Mother's Email" name="mother_email" type="email" value={editFormData.mother_email || ""} onChange={handleEditChange} />
                             </div>
                         </CardContent>
                     </Card>
@@ -1281,6 +1518,122 @@ function StudentDetailContent() {
                     <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
                         <p className="text-[10px] sm:text-xs text-muted-foreground w-full sm:w-auto text-center sm:text-left">Ensure all personal details are correct.</p>
                         <div className="flex gap-2 w-full sm:w-auto">
+                             <Button type="submit" variant="secondary" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
+                                <Save className="h-3 w-3 mr-2" /> Update
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => setActiveEditTab("academic")} className="flex-1 sm:flex-none">
+                                Next <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                        </div>
+                    </div>
+                </TabsContent>
+
+                {/* Academic Tab Content */}
+                <TabsContent value="academic" className="space-y-6 pt-4">
+                    <Card>
+                        <CardHeader><CardTitle>SSC (10th Standard)</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Passing Year" value={editFormData.academic_records?.ssc_year || ""} onChange={(e) => handleAcademicChange("ssc_year", e.target.value)} />
+                                <FormInputGroup label="Board" value={editFormData.academic_records?.ssc_board || ""} onChange={(e) => handleAcademicChange("ssc_board", e.target.value)} />
+                            </div>
+                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.ssc_inst || ""} onChange={(e) => handleAcademicChange("ssc_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <FormInputGroup label="Seat No." value={editFormData.academic_records?.ssc_seat || ""} onChange={(e) => handleAcademicChange("ssc_seat", e.target.value)} />
+                                <FormInputGroup label="Obtained" type="number" value={editFormData.academic_records?.ssc_obt || ""} onChange={(e) => handleAcademicChange("ssc_obt", e.target.value)} />
+                                <FormInputGroup label="Total Marks" type="number" value={editFormData.academic_records?.ssc_out || ""} onChange={(e) => handleAcademicChange("ssc_out", e.target.value)} />
+                                <FormInputGroup label="Percentage %" value={editFormData.academic_records?.ssc_pct || ""} onChange={(e) => handleAcademicChange("ssc_pct", e.target.value)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader><CardTitle>HSC (12th Standard)</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Passing Year" value={editFormData.academic_records?.hsc_year || ""} onChange={(e) => handleAcademicChange("hsc_year", e.target.value)} />
+                                <FormInputGroup label="Board" value={editFormData.academic_records?.hsc_board || ""} onChange={(e) => handleAcademicChange("hsc_board", e.target.value)} />
+                            </div>
+                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.hsc_inst || ""} onChange={(e) => handleAcademicChange("hsc_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormInputGroup label="Seat No." value={editFormData.academic_records?.hsc_seat || ""} onChange={(e) => handleAcademicChange("hsc_seat", e.target.value)} />
+                                <FormInputGroup label="Physics" type="number" value={editFormData.academic_records?.hsc_phy || ""} onChange={(e) => handleAcademicChange("hsc_phy", e.target.value)} />
+                                <FormInputGroup label="Maths" type="number" value={editFormData.academic_records?.hsc_math || ""} onChange={(e) => handleAcademicChange("hsc_math", e.target.value)} />
+                                <FormInputGroup label="Chemistry" type="number" value={editFormData.academic_records?.hsc_chem || ""} onChange={(e) => handleAcademicChange("hsc_chem", e.target.value)} />
+                                <FormInputGroup label="Obtained" type="number" value={editFormData.academic_records?.hsc_obt || ""} onChange={(e) => handleAcademicChange("hsc_obt", e.target.value)} />
+                                <FormInputGroup label="Total Marks" type="number" value={editFormData.academic_records?.hsc_out || ""} onChange={(e) => handleAcademicChange("hsc_out", e.target.value)} />
+                                <FormInputGroup label="Percentage %" value={editFormData.academic_records?.hsc_pct || ""} onChange={(e) => handleAcademicChange("hsc_pct", e.target.value)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader><CardTitle>Diploma Details</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Passing Year" value={editFormData.academic_records?.dip_year || ""} onChange={(e) => handleAcademicChange("dip_year", e.target.value)} />
+                                <FormInputGroup label="Board" value={editFormData.academic_records?.dip_board || ""} onChange={(e) => handleAcademicChange("dip_board", e.target.value)} />
+                            </div>
+                            <FormInputGroup label="Institute Name" value={editFormData.academic_records?.dip_inst || ""} onChange={(e) => handleAcademicChange("dip_inst", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Seat No." value={editFormData.academic_records?.dip_seat || ""} onChange={(e) => handleAcademicChange("dip_seat", e.target.value)} />
+                                <FormInputGroup label="Percentage %" value={editFormData.academic_records?.dip_pct || ""} onChange={(e) => handleAcademicChange("dip_pct", e.target.value)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader><CardTitle>Direct Second Year (DSY)</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="Institute Name" value={editFormData.academic_records?.dsy_inst || ""} onChange={(e) => handleAcademicChange("dsy_inst", e.target.value)} />
+                                <FormInputGroup label="Institute Code" value={editFormData.academic_records?.dsy_code || ""} onChange={(e) => handleAcademicChange("dsy_code", e.target.value)} />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormInputGroup label="Branch" value={editFormData.academic_records?.dsy_branch || ""} onChange={(e) => handleAcademicChange("dsy_branch", e.target.value)} />
+                                <FormInputGroup label="Obtained" type="number" value={editFormData.academic_records?.dsy_obt || ""} onChange={(e) => handleAcademicChange("dsy_obt", e.target.value)} />
+                                <FormInputGroup label="Total Marks" type="number" value={editFormData.academic_records?.dsy_out || ""} onChange={(e) => handleAcademicChange("dsy_out", e.target.value)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader><CardTitle>Entrance Exam Details</CardTitle></CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="space-y-4">
+                                    <h4 className="text-sm font-semibold border-b pb-1">MHT-CET</h4>
+                                    <div className="space-y-3">
+                                        <FormInputGroup label="Seat No." value={editFormData.academic_records?.cet_seat || ""} onChange={(e) => handleAcademicChange("cet_seat", e.target.value)} />
+                                        <FormInputGroup label="Percentile" value={editFormData.academic_records?.cet_pct || ""} onChange={(e) => handleAcademicChange("cet_pct", e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <h4 className="text-sm font-semibold border-b pb-1">JEE Main</h4>
+                                    <div className="space-y-3">
+                                        <FormInputGroup label="Seat No." value={editFormData.academic_records?.jee_seat || ""} onChange={(e) => handleAcademicChange("jee_seat", e.target.value)} />
+                                        <FormInputGroup label="Score" value={editFormData.academic_records?.jee_total || ""} onChange={(e) => handleAcademicChange("jee_total", e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <h4 className="text-sm font-semibold border-b pb-1">NATA</h4>
+                                    <div className="space-y-3">
+                                        <FormInputGroup label="Seat No." value={editFormData.academic_records?.nata_seat || ""} onChange={(e) => handleAcademicChange("nata_seat", e.target.value)} />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <FormInputGroup label="Obtained" type="number" value={editFormData.academic_records?.nata_obt || ""} onChange={(e) => handleAcademicChange("nata_obt", e.target.value)} />
+                                            <FormInputGroup label="Out of" type="number" value={editFormData.academic_records?.nata_out || ""} onChange={(e) => handleAcademicChange("nata_out", e.target.value)} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("personal")} className="w-full sm:w-auto order-2 sm:order-1">
+                           <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
                              <Button type="submit" variant="secondary" size="sm" disabled={isSubmitting} className="flex-1 sm:flex-none">
                                 <Save className="h-3 w-3 mr-2" /> Update
                             </Button>
@@ -1379,12 +1732,30 @@ function StudentDetailContent() {
                                 <FormInputGroup label="City" name="city" value={editFormData.city || ""} onChange={handleEditChange} required />
                                 <FormInputGroup label="State" name="state" value={editFormData.state || ""} onChange={handleEditChange} required />
                                 <FormInputGroup label="ZIP Code" name="zipcode" value={editFormData.zipcode || ""} onChange={handleEditChange} required />
+                                <FormInputGroup label="Taluka" name="taluka" value={editFormData.correspondence_details?.taluka || ""} onChange={(e) => handleCorrespondenceChange("taluka", e.target.value)} />
+                                <FormInputGroup label="District" name="district" value={editFormData.correspondence_details?.district || ""} onChange={(e) => handleCorrespondenceChange("district", e.target.value)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Permanent Address</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <FormInputGroup label="Address Line" name="perm_address" value={editFormData.permanent_details?.address || ""} onChange={(e) => handlePermanentChange("address", e.target.value)} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormInputGroup label="City" name="perm_city" value={editFormData.permanent_details?.city || ""} onChange={(e) => handlePermanentChange("city", e.target.value)} />
+                                <FormInputGroup label="State" name="perm_state" value={editFormData.permanent_details?.state || ""} onChange={(e) => handlePermanentChange("state", e.target.value)} />
+                                <FormInputGroup label="ZIP Code" name="perm_zipcode" value={editFormData.permanent_details?.zipcode || ""} onChange={(e) => handlePermanentChange("zipcode", e.target.value)} />
+                                <FormInputGroup label="Taluka" name="perm_taluka" value={editFormData.permanent_details?.taluka || ""} onChange={(e) => handlePermanentChange("taluka", e.target.value)} />
+                                <FormInputGroup label="District" name="perm_district" value={editFormData.permanent_details?.district || ""} onChange={(e) => handlePermanentChange("district", e.target.value)} />
                             </div>
                         </CardContent>
                     </Card>
 
                     <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-4 border-t mt-6">
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("personal")} className="w-full sm:w-auto order-2 sm:order-1">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setActiveEditTab("academic")} className="w-full sm:w-auto order-2 sm:order-1">
                            <ChevronLeft className="h-4 w-4 mr-1" /> Back
                         </Button>
                         <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
@@ -1410,7 +1781,9 @@ function StudentDetailContent() {
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputGroup label="Admission Type" name="admission_type" value={editFormData.admission_type || ""} onChange={handleEditChange} />
+                                <FormInputGroup label="Admission Category" name="admission_category" value={editFormData.admission_category || ""} onChange={handleEditChange} />
                             </div>
+                            <FormInputGroup label="Source of Information (How did you hear about us?)" name="how_did_you_know" value={editFormData.how_did_you_know || ""} onChange={handleEditChange} />
                         </CardContent>
                     </Card>
 
@@ -1726,30 +2099,47 @@ function StudentDetailContent() {
                 {mode === 'view' ? renderViewContent(studentData) : renderEditForm()}
             </Card>
 
-            {/* Document Viewer Dialog */}
             <Dialog open={isViewerOpen} onOpenChange={setIsViewerOpen}>
-                <DialogContent className="max-w-4xl h-[90vh]">
-                    <DialogHeader>
-                        <DialogTitle>{viewingDoc?.doc.name}</DialogTitle>
-                        <p className="text-sm text-muted-foreground">{viewingDoc?.doc.fileName}</p>
+                <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-4 sm:p-6 gap-4">
+                    <DialogHeader className="flex-shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <DialogTitle className="text-xl">{viewingDoc?.doc.name}</DialogTitle>
+                                <p className="text-xs text-muted-foreground truncate max-w-[300px] sm:max-w-md">
+                                    {viewingDoc?.doc.fileName || viewingDoc?.doc.path.split('/').pop()}
+                                </p>
+                            </div>
+                            {viewingDoc && (
+                                <Button 
+                                    variant="secondary" 
+                                    size="sm" 
+                                    onClick={() => window.open(viewingDoc.publicUrl, '_blank')}
+                                    className="w-full sm:w-auto"
+                                >
+                                    <ExternalLink className="h-4 w-4 mr-2" />
+                                    Open Full View
+                                </Button>
+                            )}
+                        </div>
                     </DialogHeader>
-                    <div className="h-full w-full rounded-md bg-muted overflow-hidden">
-                        {viewingDoc && viewingDoc.doc.fileType?.startsWith("image/") ? (
+                    <div className="flex-1 min-h-0 w-full rounded-xl bg-secondary/30 overflow-hidden relative border shadow-inner">
+                        {viewingDoc && (viewingDoc.doc.fileType?.startsWith("image/") || viewingDoc.doc.path.match(/\.(jpg|jpeg|png|gif|webp)$/i)) ? (
                             <img
                                 src={viewingDoc.publicUrl}
                                 alt={viewingDoc.doc.name}
-                                className="h-full w-full object-contain"
+                                className="h-full w-full object-contain p-2"
                             />
                         ) : viewingDoc ? (
                             <iframe
-                                src={viewingDoc.publicUrl}
+                                src={`${viewingDoc.publicUrl}#toolbar=1&navpanes=0`}
                                 title={viewingDoc.doc.name}
-                                className="h-full w-full"
+                                className="h-full w-full bg-white"
                                 frameBorder="0"
                             />
                         ) : (
-                            <div className="flex items-center justify-center h-full">
-                                <Loader2 className="h-8 w-8 animate-spin" />
+                            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+                                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                                <p className="text-sm">Loading document...</p>
                             </div>
                         )}
                     </div>
